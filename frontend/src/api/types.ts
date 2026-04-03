@@ -9,7 +9,6 @@ export interface UserPublic {
 
 export interface SchemeType {
   id: number
-  business_code: string
   category: string
   name: string
   remark: string | null

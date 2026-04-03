@@ -16,7 +16,6 @@ class SchemeType(Base):
     __tablename__ = "scheme_types"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    business_code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     category: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     remark: Mapped[str | None] = mapped_column(Text, nullable=True)

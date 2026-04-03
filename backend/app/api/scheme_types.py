@@ -24,10 +24,7 @@ def create_scheme(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> SchemeType:
-    if db.query(SchemeType).filter(SchemeType.business_code == body.business_code).first():
-        raise HTTPException(status_code=400, detail="方案业务ID已存在")
     row = SchemeType(
-        business_code=body.business_code,
         category=body.category,
         name=body.name,
         remark=body.remark,
@@ -60,10 +57,6 @@ def update_scheme(
     row = db.get(SchemeType, scheme_id)
     if row is None:
         raise HTTPException(status_code=404, detail="方案类型不存在")
-    if body.business_code is not None and body.business_code != row.business_code:
-        if db.query(SchemeType).filter(SchemeType.business_code == body.business_code).first():
-            raise HTTPException(status_code=400, detail="方案业务ID已存在")
-        row.business_code = body.business_code
     if body.category is not None:
         row.category = body.category
     if body.name is not None:

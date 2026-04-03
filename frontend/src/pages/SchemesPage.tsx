@@ -25,7 +25,6 @@ export default function SchemesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (values: {
-      business_code: string
       category: string
       name: string
       remark?: string
@@ -79,7 +78,6 @@ export default function SchemesPage() {
         dataSource={data}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 72 },
-          { title: '方案业务ID', dataIndex: 'business_code' },
           { title: '方案大类', dataIndex: 'category' },
           { title: '方案名称', dataIndex: 'name' },
           { title: '备注', dataIndex: 'remark' },
@@ -95,7 +93,6 @@ export default function SchemesPage() {
                         onClick={() => {
                           setEditing(row)
                           form.setFieldsValue({
-                            business_code: row.business_code,
                             category: row.category,
                             name: row.name,
                             remark: row.remark ?? '',
@@ -135,10 +132,11 @@ export default function SchemesPage() {
           onFinish={(v) => saveMutation.mutate(v)}
           initialValues={{ category: '', remark: '' }}
         >
-          <Form.Item name="business_code" label="方案业务ID" rules={[{ required: true }]}>
-            <Input disabled={!!editing} />
-          </Form.Item>
-          <Form.Item name="category" label="方案大类">
+          <Form.Item
+            name="category"
+            label="方案大类"
+            rules={[{ required: true, message: '请输入方案大类' }]}
+          >
             <Input />
           </Form.Item>
           <Form.Item name="name" label="方案名称" rules={[{ required: true }]}>

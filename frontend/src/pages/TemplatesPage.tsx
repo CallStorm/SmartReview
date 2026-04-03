@@ -69,7 +69,7 @@ export default function TemplatesPage() {
         dataSource={schemes}
         columns={[
           { title: '方案ID', dataIndex: 'id', width: 80 },
-          { title: '业务ID', dataIndex: 'business_code' },
+          { title: '方案大类', dataIndex: 'category' },
           { title: '方案名称', dataIndex: 'name' },
           {
             title: '操作',
