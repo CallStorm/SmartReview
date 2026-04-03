@@ -67,3 +67,18 @@ export interface TemplatePublic {
   parsed_at: string | null
   updated_at: string | null
 }
+
+export type ReviewTaskStatus = 'pending' | 'processing' | 'succeeded' | 'failed'
+
+export interface ReviewTask {
+  id: number
+  scheme_type_id: number
+  scheme_category: string
+  scheme_name: string
+  status: ReviewTaskStatus
+  result_text: string | null
+  error_message: string | null
+  original_filename: string
+  created_at: string
+  updated_at: string
+}

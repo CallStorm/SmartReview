@@ -46,3 +46,14 @@ def presigned_get_url(object_key: str, expires_seconds: int = 3600) -> str:
         object_key,
         expires=timedelta(seconds=expires_seconds),
     )
+
+
+def get_object_bytes(object_key: str) -> bytes:
+    s = get_settings()
+    c = get_client()
+    r = c.get_object(s.minio_bucket, object_key)
+    try:
+        return r.read()
+    finally:
+        r.close()
+        r.release_conn()

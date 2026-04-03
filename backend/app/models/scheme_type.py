@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.scheme_review_task import SchemeReviewTask
     from app.models.scheme_template import SchemeTemplate
 
 
@@ -30,6 +31,9 @@ class SchemeType(Base):
         back_populates="scheme_type",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    review_tasks: Mapped[list[SchemeReviewTask]] = relationship(
+        "SchemeReviewTask", back_populates="scheme_type"
     )
 
     @property

@@ -2,6 +2,7 @@ import './AppLayout.css'
 
 import {
   AppstoreOutlined,
+  FileSearchOutlined,
   FileTextOutlined,
   FormOutlined,
   LogoutOutlined,
@@ -25,6 +26,7 @@ export default function AppLayout() {
 
   const items = [
     { key: '/schemes', icon: <AppstoreOutlined />, label: '方案类型管理' },
+    { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
     ...(user?.role === 'admin'
       ? [
           { key: '/basis', icon: <FileTextOutlined />, label: '编制依据管理' },
