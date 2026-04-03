@@ -1,0 +1,106 @@
+.app-sider-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #fff;
+}
+
+.app-sider-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.app-sider-brand--collapsed {
+  justify-content: center;
+  padding: 16px 12px;
+}
+
+.app-sider-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #1677ff;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.app-sider-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.88);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.app-sider-menu {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 10px;
+  border-inline: none !important;
+}
+
+.app-sider-menu.ant-menu-inline .ant-menu-item {
+  margin-inline: 0;
+  margin-block: 4px;
+  width: 100%;
+  border-radius: 10px !important;
+  height: 44px;
+  line-height: 44px;
+}
+
+.app-sider-menu.ant-menu-inline .ant-menu-item-selected {
+  background: #f5f5f5 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+  font-weight: 500;
+}
+
+.app-sider-menu.ant-menu-inline .ant-menu-item-selected::after {
+  display: none;
+}
+
+.app-sider-menu.ant-menu-inline .ant-menu-item:not(.ant-menu-item-selected):hover {
+  background: #fafafa !important;
+}
+
+.app-sider-footer {
+  flex-shrink: 0;
+  padding: 16px 14px 20px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+}
+
+.app-main-header {
+  display: flex;
+  align-items: center;
+  padding-inline: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  min-height: 56px;
+}
+
+.app-collapse-btn.ant-btn {
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: #f0f0f0;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.app-collapse-btn.ant-btn:hover {
+  border-color: #d9d9d9;
+  color: rgba(0, 0, 0, 0.88);
+}

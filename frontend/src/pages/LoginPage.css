@@ -1,0 +1,88 @@
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: #f0f0f0;
+  font-family:
+    'PingFang SC',
+    'Microsoft YaHei',
+    'Helvetica Neue',
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.login-page__card {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 40px 40px 28px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.login-page__title {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.88);
+  letter-spacing: 0.02em;
+}
+
+.login-page__subtitle {
+  margin: 0 0 28px;
+  text-align: center;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.login-page__form .ant-form-item {
+  margin-bottom: 18px;
+}
+
+.login-page__form .ant-form-item-label > label {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.login-page__form .ant-input,
+.login-page__form .ant-input-affix-wrapper {
+  border-radius: 8px !important;
+  border-color: #e8e8e8 !important;
+  min-height: 42px;
+  padding-block: 8px;
+}
+
+.login-page__form .ant-input::placeholder {
+  color: rgba(0, 0, 0, 0.28);
+}
+
+.login-page__submit.ant-btn {
+  height: 44px;
+  margin-top: 8px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  background: #000 !important;
+  border-color: #000 !important;
+  color: #fff !important;
+}
+
+.login-page__submit.ant-btn:hover {
+  background: #262626 !important;
+  border-color: #262626 !important;
+  color: #fff !important;
+}
+
+.login-page__footer {
+  margin-top: 28px;
+  padding-top: 4px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.28);
+}
