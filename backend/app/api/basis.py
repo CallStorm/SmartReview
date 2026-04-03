@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,14 @@ from app.models.user import User
 from app.schemas.basis import BasisCreate, BasisRead, BasisUpdate
 
 router = APIRouter(prefix="/basis", tags=["basis"])
+
+
+def _allocate_basis_id(db: Session) -> str:
+    for _ in range(32):
+        candidate = f"BASIS_{uuid.uuid4().hex[:12].upper()}"
+        if db.query(BasisItem).filter(BasisItem.basis_id == candidate).first() is None:
+            return candidate
+    raise HTTPException(status_code=500, detail="无法生成依据ID")
 
 
 @router.get("", response_model=list[BasisRead])
@@ -24,10 +34,8 @@ def create_basis(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> BasisItem:
-    if db.query(BasisItem).filter(BasisItem.basis_id == body.basis_id).first():
-        raise HTTPException(status_code=400, detail="依据ID已存在")
     row = BasisItem(
-        basis_id=body.basis_id,
+        basis_id=_allocate_basis_id(db),
         doc_type=body.doc_type,
         standard_no=body.standard_no,
         doc_name=body.doc_name,

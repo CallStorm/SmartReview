@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 
 class BasisCreate(BaseModel):
-    basis_id: str = Field(..., description="依据ID，如 BASIS_001")
     doc_type: str = Field(default="", description="文献类型")
     standard_no: str = Field(default="", description="标准号")
     doc_name: str = Field(default="", description="文献名称")

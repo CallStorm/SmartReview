@@ -5,14 +5,48 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Switch,
   Table,
 } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../api/client'
-import type { BasisItem } from '../api/types'
+import type { BasisItem, SchemeType } from '../api/types'
+
+/** 文献类型（前端内置，与后端存字符串一致） */
+const DOC_TYPE_OPTIONS = [
+  { label: '国家标准（国标）', value: '国家标准（国标）' },
+  { label: '行业标准（行标）', value: '行业标准（行标）' },
+  { label: '地方标准', value: '地方标准' },
+  { label: '团体标准', value: '团体标准' },
+  { label: '企业标准', value: '企业标准' },
+  { label: '法律', value: '法律' },
+  { label: '行政法规', value: '行政法规' },
+  { label: '部门规章', value: '部门规章' },
+  { label: '规范性文件', value: '规范性文件' },
+  { label: '技术规范', value: '技术规范' },
+  { label: '其他', value: '其他' },
+]
+
+/** 效力状态（前端内置） */
+const EFFECT_STATUS_OPTIONS = [
+  { label: '现行', value: '现行' },
+  { label: '废止', value: '废止' },
+  { label: '即将实施', value: '即将实施' },
+  { label: '征求意见/草案', value: '征求意见/草案' },
+  { label: '部分废止', value: '部分废止' },
+  { label: '其他', value: '其他' },
+]
+
+function resolveSchemeSelection(
+  schemes: SchemeType[],
+  category: string,
+  name: string,
+): number | undefined {
+  return schemes.find((s) => s.category === category && s.name === name)?.id
+}
 
 export default function BasisPage() {
   const qc = useQueryClient()
@@ -25,17 +59,41 @@ export default function BasisPage() {
     },
   })
 
+  const { data: schemes = [] } = useQuery({
+    queryKey: ['schemes'],
+    queryFn: async () => {
+      const { data: rows } = await api.get<SchemeType[]>('/scheme-types')
+      return rows
+    },
+  })
+
+  const schemeSelectOptions = useMemo(
+    () =>
+      schemes.map((s) => ({
+        value: s.id,
+        label: `${s.category} / ${s.name}`,
+      })),
+    [schemes],
+  )
+
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<BasisItem | null>(null)
   const [form] = Form.useForm()
 
   const saveMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) => {
+      const schemeTypeId = values.scheme_type_id as number | undefined
+      const st = schemeTypeId != null ? schemes.find((s) => s.id === schemeTypeId) : undefined
+      const { scheme_type_id: _sid, basis_id: _bid, ...rest } = values
+      const body = {
+        ...rest,
+        scheme_category: st?.category ?? '',
+        scheme_name: st?.name ?? '',
+      }
       if (editing) {
-        const { basis_id: _b, ...patch } = values
-        await api.patch(`/basis/${editing.id}`, patch)
+        await api.patch(`/basis/${editing.id}`, body)
       } else {
-        await api.post('/basis', values)
+        await api.post('/basis', body)
       }
     },
     onSuccess: async () => {
@@ -77,11 +135,10 @@ export default function BasisPage() {
         scroll={{ x: 1200 }}
         dataSource={data}
         columns={[
-          { title: '依据ID', dataIndex: 'basis_id', width: 120, fixed: 'left' },
-          { title: '文献类型', dataIndex: 'doc_type', width: 88 },
+          { title: '文献类型', dataIndex: 'doc_type', width: 120 },
           { title: '标准号', dataIndex: 'standard_no', width: 140 },
           { title: '文献名称', dataIndex: 'doc_name', width: 220 },
-          { title: '效力状态', dataIndex: 'effect_status', width: 88 },
+          { title: '效力状态', dataIndex: 'effect_status', width: 100 },
           {
             title: '必引',
             dataIndex: 'is_mandatory',
@@ -102,7 +159,14 @@ export default function BasisPage() {
                   type="link"
                   onClick={() => {
                     setEditing(row)
-                    form.setFieldsValue({ ...row })
+                    form.setFieldsValue({
+                      ...row,
+                      scheme_type_id: resolveSchemeSelection(
+                        schemes,
+                        row.scheme_category,
+                        row.scheme_name,
+                      ),
+                    })
                     setOpen(true)
                   }}
                 >
@@ -136,31 +200,23 @@ export default function BasisPage() {
           layout="vertical"
           onFinish={(v) => saveMutation.mutate(v)}
           initialValues={{
-            doc_type: '',
+            doc_type: undefined,
             standard_no: '',
             doc_name: '',
-            effect_status: '',
+            effect_status: undefined,
             is_mandatory: false,
-            scheme_category: '',
-            scheme_name: '',
+            scheme_type_id: undefined,
             remark: '',
           }}
         >
-          <Form.Item
-            name="basis_id"
-            label="依据ID"
-            rules={[{ required: true }]}
-            hidden={!!editing}
-          >
-            <Input disabled={!!editing} />
-          </Form.Item>
-          {editing && (
-            <Form.Item label="依据ID">
-              <Input value={editing.basis_id} disabled />
-            </Form.Item>
-          )}
           <Form.Item name="doc_type" label="文献类型">
-            <Input />
+            <Select
+              allowClear
+              placeholder="请选择文献类型"
+              options={DOC_TYPE_OPTIONS}
+              showSearch
+              optionFilterProp="label"
+            />
           </Form.Item>
           <Form.Item name="standard_no" label="标准号">
             <Input />
@@ -169,16 +225,31 @@ export default function BasisPage() {
             <Input />
           </Form.Item>
           <Form.Item name="effect_status" label="效力状态">
-            <Input />
+            <Select
+              allowClear
+              placeholder="请选择效力状态"
+              options={EFFECT_STATUS_OPTIONS}
+              showSearch
+              optionFilterProp="label"
+            />
           </Form.Item>
           <Form.Item name="is_mandatory" label="是否必引" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="scheme_category" label="方案大类">
-            <Input />
-          </Form.Item>
-          <Form.Item name="scheme_name" label="方案名称">
-            <Input />
+          <Form.Item
+            name="scheme_type_id"
+            label="方案类型"
+            extra="选项来自「方案类型管理」中的大类与名称"
+          >
+            <Select
+              allowClear
+              placeholder="请选择方案类型"
+              options={schemeSelectOptions}
+              showSearch
+              optionFilterProp="label"
+              disabled={schemes.length === 0}
+              notFoundContent={schemes.length === 0 ? '请先在方案类型管理中添加方案类型' : undefined}
+            />
           </Form.Item>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={3} />
