@@ -6,6 +6,7 @@ import AppLayout from './components/AppLayout'
 import BasisPage from './pages/BasisPage'
 import LoginPage from './pages/LoginPage'
 import SchemesPage from './pages/SchemesPage'
+import SettingsPage from './pages/SettingsPage'
 import TemplatesPage from './pages/TemplatesPage'
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -80,6 +81,14 @@ function AppRoutes() {
           element={
             <RequireAdmin>
               <TemplatesPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <RequireAdmin>
+              <SettingsPage />
             </RequireAdmin>
           }
         />

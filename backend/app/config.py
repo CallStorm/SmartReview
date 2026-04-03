@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     admin_password: str = ""
     admin_phone: str = "00000000000"
 
+    # Dify 知识库（可通过环境变量预置；管理员也可在「设置」中覆盖写入数据库）
+    dify_base_url: str = ""
+    dify_api_key: str = ""
+
     @property
     def database_url(self) -> str:
         return (

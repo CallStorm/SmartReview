@@ -7,6 +7,11 @@ export interface UserPublic {
   role: UserRole
 }
 
+export interface KnowledgeBaseSettings {
+  dify_base_url: string
+  api_key_configured: boolean
+}
+
 export interface SchemeType {
   id: number
   category: string

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.api import auth, basis, scheme_types, templates
+from app.api import auth, basis, scheme_types, settings_kb, templates
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models.user import User, UserRole
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(scheme_types.router)
     app.include_router(basis.router)
     app.include_router(templates.router)
+    app.include_router(settings_kb.router)
     return app
 
 

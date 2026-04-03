@@ -1,6 +1,13 @@
 from app.models.basis_item import BasisItem
+from app.models.knowledge_base_settings import KnowledgeBaseSettings
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.models.user import User
 
-__all__ = ["User", "SchemeType", "BasisItem", "SchemeTemplate"]
+__all__ = [
+    "User",
+    "SchemeType",
+    "BasisItem",
+    "SchemeTemplate",
+    "KnowledgeBaseSettings",
+]
