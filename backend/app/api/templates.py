@@ -12,13 +12,26 @@ from app.deps import get_current_user, require_admin
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.models.user import User
-from app.schemas.template import DownloadUrlResponse, TemplatePublic, TemplateUploadResponse
+from app.schemas.template import (
+    DownloadUrlResponse,
+    TemplatePublic,
+    TemplateStructureUpdate,
+    TemplateUploadResponse,
+)
 from app.services import minio_storage
 from app.services.word_parser import parse_docx_to_tree, tree_to_json_str
 
 router = APIRouter(tags=["templates"])
 
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+
+
+def _validate_parsed_structure_blob(obj: object) -> None:
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=400, detail="parsed_structure 须为 JSON 对象")
+    nodes = obj.get("nodes")
+    if not isinstance(nodes, list):
+        raise HTTPException(status_code=400, detail="parsed_structure 须包含 nodes 数组")
 
 
 def _template_public(t: SchemeTemplate) -> TemplatePublic:
@@ -114,6 +127,29 @@ def get_template(
     t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
     if t is None:
         raise HTTPException(status_code=404, detail="尚未上传模版")
+    return _template_public(t)
+
+
+@router.put("/scheme-types/{scheme_id}/template/structure", response_model=TemplatePublic)
+def update_template_structure(
+    scheme_id: int,
+    body: TemplateStructureUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> TemplatePublic:
+    scheme = db.get(SchemeType, scheme_id)
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="方案类型不存在")
+    t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
+    if t is None:
+        raise HTTPException(status_code=404, detail="尚未上传模版")
+    _validate_parsed_structure_blob(body.parsed_structure)
+    try:
+        t.parsed_structure = json.dumps(body.parsed_structure, ensure_ascii=False)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"无法序列化 JSON: {e!s}") from e
+    db.commit()
+    db.refresh(t)
     return _template_public(t)
 
 

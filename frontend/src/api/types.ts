@@ -12,6 +12,11 @@ export interface KnowledgeBaseSettings {
   api_key_configured: boolean
 }
 
+export interface DifyDatasetItem {
+  id: string
+  name: string
+}
+
 export interface SchemeType {
   id: number
   category: string
@@ -44,6 +49,12 @@ export interface TemplateNode {
   title: string
   content: string[]
   children: TemplateNode[]
+  /** 引用同树中其他节点 id */
+  ref_node_ids?: string[]
+  /** Dify 知识库（数据集）id */
+  dify_dataset_id?: string | null
+  knowledge_keywords?: string[]
+  review_prompt?: string
 }
 
 export interface TemplatePublic {

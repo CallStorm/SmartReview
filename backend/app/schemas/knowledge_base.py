@@ -8,6 +8,13 @@ class KnowledgeBasePublic(BaseModel):
     api_key_configured: bool
 
 
+class DifyDatasetItem(BaseModel):
+    """Dify 知识库（数据集）列表项。"""
+
+    id: str
+    name: str
+
+
 class KnowledgeBaseUpdate(BaseModel):
     dify_base_url: str = Field(..., description="Dify API 根路径，如 http://host/v1")
     dify_api_key: str | None = Field(
