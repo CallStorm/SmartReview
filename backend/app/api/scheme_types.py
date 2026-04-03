@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import get_current_user, require_admin
@@ -15,7 +15,12 @@ def list_schemes(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> list[SchemeType]:
-    return db.query(SchemeType).order_by(SchemeType.id).all()
+    return (
+        db.query(SchemeType)
+        .options(joinedload(SchemeType.template))
+        .order_by(SchemeType.id)
+        .all()
+    )
 
 
 @router.post("", response_model=SchemeTypeRead, status_code=status.HTTP_201_CREATED)
@@ -41,7 +46,12 @@ def get_scheme(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> SchemeType:
-    row = db.get(SchemeType, scheme_id)
+    row = (
+        db.query(SchemeType)
+        .options(joinedload(SchemeType.template))
+        .filter(SchemeType.id == scheme_id)
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404, detail="方案类型不存在")
     return row

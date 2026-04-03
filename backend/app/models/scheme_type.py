@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -30,3 +31,19 @@ class SchemeType(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    @property
+    def template_configured(self) -> bool:
+        """已上传模版、完成解析且标题树非空。"""
+        t = self.template
+        if t is None or t.parsed_at is None:
+            return False
+        raw = t.parsed_structure
+        if not raw or not str(raw).strip():
+            return False
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+        nodes = data.get("nodes") if isinstance(data, dict) else None
+        return isinstance(nodes, list) and len(nodes) > 0

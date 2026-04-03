@@ -14,6 +14,8 @@ export interface SchemeType {
   remark: string | null
   created_at: string | null
   updated_at: string | null
+  /** 已解析且标题结构非空 */
+  template_configured: boolean
 }
 
 export interface BasisItem {

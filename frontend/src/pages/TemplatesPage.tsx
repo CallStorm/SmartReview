@@ -4,6 +4,7 @@ import {
   Modal,
   Space,
   Table,
+  Tag,
   Tree,
   Upload,
   Typography,
@@ -57,6 +58,7 @@ export default function TemplatesPage() {
       message.success(res.message === 'updated' ? '模版已更新' : '模版已上传')
       setUploadScheme(null)
       void qc.invalidateQueries({ queryKey: ['template', res.template.scheme_type_id] })
+      void qc.invalidateQueries({ queryKey: ['schemes'] })
     },
     onError: () => message.error('上传失败'),
   })
@@ -67,20 +69,39 @@ export default function TemplatesPage() {
         rowKey="id"
         loading={isLoading}
         dataSource={schemes}
+        scroll={{ x: 'max-content' }}
         columns={[
-          { title: '方案ID', dataIndex: 'id', width: 80 },
-          { title: '方案大类', dataIndex: 'category' },
-          { title: '方案名称', dataIndex: 'name' },
+          { title: '方案ID', dataIndex: 'id', width: 72 },
+          {
+            title: '方案大类',
+            dataIndex: 'category',
+            ellipsis: true,
+            width: 160,
+          },
+          { title: '方案名称', dataIndex: 'name', ellipsis: true },
+          {
+            title: '模版状态',
+            key: 'template_status',
+            width: 100,
+            render: (_: unknown, row: SchemeType) =>
+              row.template_configured ? (
+                <Tag color="success">已配置</Tag>
+              ) : (
+                <Tag>未配置</Tag>
+              ),
+          },
           {
             title: '操作',
             key: 'actions',
-            width: 320,
+            width: 268,
+            fixed: 'right',
             render: (_: unknown, row: SchemeType) => (
-              <Space wrap>
-                <Button type="primary" onClick={() => setUploadScheme(row)}>
-                  上传 / 更新 Word
+              <Space size="small" wrap={false} style={{ whiteSpace: 'nowrap' }}>
+                <Button type="primary" size="small" onClick={() => setUploadScheme(row)}>
+                  {row.template_configured ? '更新 Word' : '上传 Word'}
                 </Button>
                 <Button
+                  size="small"
                   onClick={async () => {
                     try {
                       const { data } = await api.get<TemplatePublic>(
@@ -92,9 +113,10 @@ export default function TemplatesPage() {
                     }
                   }}
                 >
-                  查看结构
+                  结构
                 </Button>
                 <Button
+                  size="small"
                   onClick={async () => {
                     try {
                       const { data } = await api.get<{ url: string }>(
@@ -144,7 +166,7 @@ export default function TemplatesPage() {
         destroyOnClose
       >
         {preview?.parsed_structure?.nodes?.length ? (
-          <Tree defaultExpandAll treeData={nodesToTreeData(preview.parsed_structure.nodes)} />
+          <Tree treeData={nodesToTreeData(preview.parsed_structure.nodes)} />
         ) : (
           <Typography.Text type="secondary">无可展示的标题结构（请确认 Word 使用了标题样式）</Typography.Text>
         )}

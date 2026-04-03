@@ -40,5 +40,6 @@ class SchemeTypeRead(BaseModel):
     remark: str | None
     created_at: datetime | None
     updated_at: datetime | None
+    template_configured: bool = False
 
     model_config = {"from_attributes": True}
