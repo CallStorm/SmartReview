@@ -7,6 +7,11 @@ export interface UserPublic {
   role: UserRole
 }
 
+export interface UserListItem extends UserPublic {
+  created_at: string | null
+  updated_at: string | null
+}
+
 export interface KnowledgeBaseSettings {
   dify_base_url: string
   api_key_configured: boolean

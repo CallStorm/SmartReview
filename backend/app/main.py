@@ -14,6 +14,7 @@ from app.api import (
     settings_model,
     settings_onlyoffice,
     templates,
+    users,
 )
 from app.config import get_settings
 from app.database import SessionLocal
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(auth.router)
+    app.include_router(users.router)
     app.include_router(scheme_types.router)
     app.include_router(basis.router)
     app.include_router(templates.router)

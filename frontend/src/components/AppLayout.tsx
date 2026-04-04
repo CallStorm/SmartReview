@@ -9,6 +9,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   SettingOutlined,
+  TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Avatar, Button, Layout, Menu } from 'antd'
@@ -38,6 +39,7 @@ export default function AppLayout() {
       ? [
           { key: '/basis', icon: <FileTextOutlined />, label: '编制依据管理' },
           { key: '/templates', icon: <FormOutlined />, label: '模板管理' },
+          { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
           { key: '/settings', icon: <SettingOutlined />, label: '设置' },
         ]
       : []),

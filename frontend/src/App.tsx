@@ -11,6 +11,7 @@ import ReviewPage from './pages/ReviewPage'
 import SchemesPage from './pages/SchemesPage'
 import SettingsPage from './pages/SettingsPage'
 import TemplatesPage from './pages/TemplatesPage'
+import UsersPage from './pages/UsersPage'
 
 function RequireAuth({ children }: { children: ReactElement }) {
   const { user, loading, token } = useAuth()
@@ -98,6 +99,14 @@ function AppRoutes() {
           element={
             <RequireAdmin>
               <SettingsPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="users"
+          element={
+            <RequireAdmin>
+              <UsersPage />
             </RequireAdmin>
           }
         />
