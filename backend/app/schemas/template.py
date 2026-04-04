@@ -12,8 +12,15 @@ class ReviewWorkflowData(BaseModel):
     @field_validator("steps")
     @classmethod
     def validate_steps(cls, steps: list[str]) -> list[str]:
-        allowed = {"start", "structure", "context_consistency", "content", "end"}
-        optional = {"context_consistency", "content"}
+        allowed = {
+            "start",
+            "structure",
+            "compilation_basis",
+            "context_consistency",
+            "content",
+            "end",
+        }
+        optional_mid = {"compilation_basis", "context_consistency", "content"}
         if steps[0] != "start":
             raise ValueError("第一步须为起点 start")
         if steps[1] != "structure":
@@ -25,8 +32,17 @@ class ReviewWorkflowData(BaseModel):
         if len(steps) != len(set(steps)):
             raise ValueError("步骤不可重复")
         middle = steps[2:-1]
-        if any(m not in optional for m in middle):
-            raise ValueError("中间仅可为上下文一致性或内容审核")
+        if any(m not in optional_mid for m in middle):
+            raise ValueError("中间仅可为编制依据、上下文一致性或内容审核")
+        if middle.count("compilation_basis") > 1:
+            raise ValueError("步骤不可重复")
+        if "compilation_basis" in middle and middle[0] != "compilation_basis":
+            raise ValueError("编制依据须紧随结构审核之后")
+        rest = [m for m in middle if m != "compilation_basis"]
+        if len(rest) == 2 and set(rest) != {"context_consistency", "content"}:
+            raise ValueError("中间步骤顺序无效")
+        if len(rest) == 1 and rest[0] not in ("context_consistency", "content"):
+            raise ValueError("中间步骤顺序无效")
         return steps
 
 

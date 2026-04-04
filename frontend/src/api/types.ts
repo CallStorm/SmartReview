@@ -51,6 +51,7 @@ export interface DifyDatasetItem {
 export type WorkflowStepId =
   | 'start'
   | 'structure'
+  | 'compilation_basis'
   | 'context_consistency'
   | 'content'
   | 'end'

@@ -6,6 +6,7 @@ import type { ReviewWorkflowData, TemplatePublic, WorkflowStepId } from '../api/
 const LABELS: Record<WorkflowStepId, string> = {
   start: '起点',
   structure: '结构审核',
+  compilation_basis: '编制依据',
   context_consistency: '上下文一致性',
   content: '内容审核',
   end: '结束',
@@ -14,17 +15,20 @@ const LABELS: Record<WorkflowStepId, string> = {
 const SLOT_ORDER: WorkflowStepId[] = [
   'start',
   'structure',
+  'compilation_basis',
   'context_consistency',
   'content',
   'end',
 ]
 
 function compileSteps(
+  includeBasis: boolean,
   includeContext: boolean,
   includeContent: boolean,
   contentBeforeContext: boolean,
 ): WorkflowStepId[] {
   const mid: WorkflowStepId[] = []
+  if (includeBasis) mid.push('compilation_basis')
   if (includeContext && includeContent) {
     if (contentBeforeContext) mid.push('content', 'context_consistency')
     else mid.push('context_consistency', 'content')
@@ -38,6 +42,7 @@ function isValidServerSteps(raw: unknown): raw is WorkflowStepId[] {
   const allowed = new Set<string>([
     'start',
     'structure',
+    'compilation_basis',
     'context_consistency',
     'content',
     'end',
@@ -46,24 +51,37 @@ function isValidServerSteps(raw: unknown): raw is WorkflowStepId[] {
   if (raw[0] !== 'start' || raw[1] !== 'structure' || raw[raw.length - 1] !== 'end') return false
   if (new Set(raw).size !== raw.length) return false
   const mid = raw.slice(2, -1)
-  return mid.every((m) => m === 'context_consistency' || m === 'content')
+  const optMid = new Set(['compilation_basis', 'context_consistency', 'content'])
+  if (mid.some((m) => !optMid.has(m))) return false
+  if (mid.filter((m) => m === 'compilation_basis').length > 1) return false
+  if (mid.includes('compilation_basis') && mid[0] !== 'compilation_basis') return false
+  const rest = mid.filter((m) => m !== 'compilation_basis')
+  if (rest.length === 2) {
+    const s = new Set(rest)
+    if (s.size !== 2 || !s.has('context_consistency') || !s.has('content')) return false
+  } else if (rest.length === 1) {
+    if (rest[0] !== 'context_consistency' && rest[0] !== 'content') return false
+  }
+  return true
 }
 
 function parseSteps(steps: WorkflowStepId[]): {
+  includeBasis: boolean
   includeContext: boolean
   includeContent: boolean
   contentBeforeContext: boolean
 } {
+  const includeBasis = steps.includes('compilation_basis')
   const includeContext = steps.includes('context_consistency')
   const includeContent = steps.includes('content')
   let contentBeforeContext = false
   if (includeContext && includeContent) {
     contentBeforeContext = steps.indexOf('content') < steps.indexOf('context_consistency')
   }
-  return { includeContext, includeContent, contentBeforeContext }
+  return { includeBasis, includeContext, includeContent, contentBeforeContext }
 }
 
-const ROW_CENTERS = [44, 132, 220, 308, 396]
+const ROW_CENTERS = [44, 118, 192, 266, 340, 414]
 const CANVAS_W = 440
 const CX = CANVAS_W / 2
 const CARD_H = 52
@@ -143,7 +161,8 @@ function WorkflowCanvas({ steps }: { steps: WorkflowStepId[] }) {
       </svg>
       {SLOT_ORDER.map((id, idx) => {
         const inPath = active.has(id)
-        const optional = id === 'context_consistency' || id === 'content'
+        const optional =
+          id === 'compilation_basis' || id === 'context_consistency' || id === 'content'
         const dim = optional && !inPath
         const top = ROW_CENTERS[idx] - HALF
         return (
@@ -186,6 +205,7 @@ export default function ReviewWorkflowModal({
   onSaved,
 }: Props) {
   const { message } = AntApp.useApp()
+  const [includeBasis, setIncludeBasis] = useState(false)
   const [includeContext, setIncludeContext] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
   const [contentBeforeContext, setContentBeforeContext] = useState(false)
@@ -196,10 +216,12 @@ export default function ReviewWorkflowModal({
     const raw = template.review_workflow?.steps
     if (isValidServerSteps(raw)) {
       const p = parseSteps(raw)
+      setIncludeBasis(p.includeBasis)
       setIncludeContext(p.includeContext)
       setIncludeContent(p.includeContent)
       setContentBeforeContext(p.contentBeforeContext)
     } else {
+      setIncludeBasis(false)
       setIncludeContext(false)
       setIncludeContent(false)
       setContentBeforeContext(false)
@@ -207,8 +229,8 @@ export default function ReviewWorkflowModal({
   }, [open, template?.id, template?.updated_at, template?.review_workflow])
 
   const steps = useMemo(
-    () => compileSteps(includeContext, includeContent, contentBeforeContext),
-    [includeContext, includeContent, contentBeforeContext],
+    () => compileSteps(includeBasis, includeContext, includeContent, contentBeforeContext),
+    [includeBasis, includeContext, includeContent, contentBeforeContext],
   )
 
   async function handleSave() {
@@ -254,7 +276,7 @@ export default function ReviewWorkflowModal({
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            起点与结构审核必选；中间可开启步骤并调整顺序
+            起点与结构审核必选；编制依据可选且位于中间步骤最前；可再开启上下文/内容并调整二者顺序
           </Typography.Text>
           <Space>
             <Button onClick={onClose}>取消</Button>
@@ -274,6 +296,10 @@ export default function ReviewWorkflowModal({
           <WorkflowCanvas steps={steps} />
           <div style={{ marginTop: 20, padding: '12px 16px', background: '#fafafa', borderRadius: 8 }}>
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography.Text>{LABELS.compilation_basis}</Typography.Text>
+                <Switch checked={includeBasis} onChange={setIncludeBasis} />
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography.Text>{LABELS.context_consistency}</Typography.Text>
                 <Switch checked={includeContext} onChange={setIncludeContext} />
