@@ -69,12 +69,96 @@
   margin-inline-start: 4px;
 }
 
+/* KPI 行：同列卡片等高、同宽（Col 等分 + Card 撑满） */
+.dashboard-wall__kpi-cards-row.ant-row {
+  align-items: stretch;
+}
+
+.dashboard-wall__kpi-cards-row > .ant-col {
+  display: flex;
+}
+
+.dashboard-wall__kpi-card.ant-card {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-wall__kpi-card .ant-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .dashboard-wall__chart {
   min-height: 280px;
 }
 
+/* Dify：与其它 Statistic 相同「标题 + 一行主数字区」，双指标并排，避免卡片变高 */
+.dashboard-wall__dify-kpi {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboard-wall__dify-kpi .ant-statistic {
+  flex: 1;
+}
+
+.dashboard-wall__dify-kpi .ant-statistic-content {
+  display: block;
+  min-width: 0;
+}
+
+.dashboard-wall__dify-inline-values {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  max-width: 100%;
+}
+
+.dashboard-wall__dify-metric {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dashboard-wall__dify-metric-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-wall__dify-metric-num {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.88);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-wall__dify-metric-unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.dashboard-wall__dify-metric-sep {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.25);
+  user-select: none;
+}
+
 .dashboard-wall__dify-warn {
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 12px;
   line-height: 1.45;
   color: rgba(0, 0, 0, 0.55);

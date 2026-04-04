@@ -13,14 +13,26 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
+import type { MenuProps } from 'antd'
 import { Avatar, Button, Layout, Menu } from 'antd'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { BRAND_LOGO_SRC } from '../config/brand'
 import { resolvePageTitle } from '../utils/pageTitle'
 
 const { Header, Sider, Content } = Layout
+
+function resolveMenuSelectedKey(pathname: string): string {
+  if (pathname.startsWith('/review')) return '/review'
+  if (pathname.startsWith('/schemes')) return '/schemes'
+  if (pathname.startsWith('/dashboard')) return '/dashboard'
+  if (pathname.startsWith('/basis')) return '/basis'
+  if (pathname.startsWith('/templates')) return '/templates'
+  if (pathname.startsWith('/users')) return '/users'
+  if (pathname.startsWith('/settings')) return '/settings'
+  return pathname
+}
 
 export default function AppLayout() {
   const { user, logout } = useAuth()
@@ -32,19 +44,41 @@ export default function AppLayout() {
   const isManualReview = /^\/review\/[^/]+\/manual$/.test(loc.pathname)
   const pageTitle = resolvePageTitle(loc.pathname)
 
-  const items = [
-    { key: '/schemes', icon: <AppstoreOutlined />, label: '方案类型管理' },
-    { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
-    ...(user?.role === 'admin'
-      ? [
+  const items: MenuProps['items'] = useMemo(() => {
+    const businessItems: MenuProps['items'] = [
+      { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
+      { key: '/schemes', icon: <AppstoreOutlined />, label: '方案类型管理' },
+    ]
+
+    if (user?.role !== 'admin') {
+      return businessItems
+    }
+
+    return [
+      {
+        type: 'group',
+        label: '总览',
+        children: [
           { key: '/dashboard', icon: <BarChartOutlined />, label: '数据看板' },
+        ],
+      },
+      {
+        type: 'group',
+        label: '业务',
+        children: businessItems,
+      },
+      {
+        type: 'group',
+        label: '管理',
+        children: [
           { key: '/basis', icon: <FileTextOutlined />, label: '编制依据管理' },
           { key: '/templates', icon: <FormOutlined />, label: '模板管理' },
           { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
           { key: '/settings', icon: <SettingOutlined />, label: '设置' },
-        ]
-      : []),
-  ]
+        ],
+      },
+    ]
+  }, [user?.role])
 
   return (
     <Layout
@@ -57,6 +91,7 @@ export default function AppLayout() {
       }}
     >
       <Sider
+        className="app-root-sider"
         collapsed={collapsed}
         width={248}
         collapsedWidth={80}
@@ -89,7 +124,7 @@ export default function AppLayout() {
             mode="inline"
             theme="light"
             className="app-sider-menu"
-            selectedKeys={[loc.pathname]}
+            selectedKeys={[resolveMenuSelectedKey(loc.pathname)]}
             items={items}
             inlineCollapsed={collapsed}
             onClick={({ key }) => nav(key)}
