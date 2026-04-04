@@ -6,6 +6,7 @@ import {
   Modal,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Tree,
@@ -392,6 +393,21 @@ export default function TemplatesPage() {
                     optionFilterProp="label"
                     showSearch
                   />
+                  <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
+                    编制依据
+                  </Divider>
+                  <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+                    默认关闭；开启后对该节点执行编制依据相关审核，关闭则跳过
+                  </Typography.Paragraph>
+                  <Space align="center" size="middle">
+                    <Typography.Text>编制依据审核</Typography.Text>
+                    <Switch
+                      checked={selectedNode.compilation_basis_audit_enabled === true}
+                      onChange={(on) => patchSelected({ compilation_basis_audit_enabled: on })}
+                      checkedChildren="开"
+                      unCheckedChildren="关"
+                    />
+                  </Space>
                 </div>
               )}
             </div>

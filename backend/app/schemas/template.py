@@ -51,7 +51,7 @@ class ReviewWorkflowUpdate(BaseModel):
 
 
 class TemplateStructureUpdate(BaseModel):
-    """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/上下文一致性比对等配置）。"""
+    """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/编制依据开关/上下文一致性比对等配置）。"""
 
     parsed_structure: dict[str, Any] = Field(..., description='须包含 nodes 数组，与上传 Word 解析结果 Schema 一致')
 

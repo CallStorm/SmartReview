@@ -98,6 +98,8 @@ export interface TemplateNode {
   ref_node_ids?: string[]
   /** 上下文一致性比对：与本章节对照校验的节点 id（用于发现跨章节语义冲突等） */
   context_consistency_ref_node_ids?: string[]
+  /** 是否对该节点执行编制依据相关审核；缺省为 false（关闭） */
+  compilation_basis_audit_enabled?: boolean
   /** Dify 知识库（数据集）id */
   dify_dataset_id?: string | null
   knowledge_keywords?: string[]
