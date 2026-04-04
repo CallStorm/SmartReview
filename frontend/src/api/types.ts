@@ -12,6 +12,19 @@ export interface KnowledgeBaseSettings {
   api_key_configured: boolean
 }
 
+export interface OnlyofficeSettings {
+  docs_url: string
+  callback_base_url: string
+  editor_lang: string
+  jwt_configured: boolean
+}
+
+export interface OnlyofficeEditorConfigResponse {
+  docs_url: string
+  config: Record<string, unknown>
+  token: string
+}
+
 export type LlmApiProtocol = 'openai_compatible' | 'anthropic'
 
 export type ProviderId = 'volcengine' | 'minimax'

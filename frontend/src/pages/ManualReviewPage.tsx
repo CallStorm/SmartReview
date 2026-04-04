@@ -132,6 +132,7 @@ export default function ManualReviewPage() {
         <Space>
           <Button
             icon={<EditOutlined />}
+            disabled={!canExport}
             onClick={() => navigate(`/review/${task.id}/edit`)}
           >
             编辑

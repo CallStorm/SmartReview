@@ -4,7 +4,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.api import auth, basis, review_tasks, scheme_types, settings_kb, settings_model, templates
+from app.api import (
+    auth,
+    basis,
+    onlyoffice_callback,
+    review_tasks,
+    scheme_types,
+    settings_kb,
+    settings_model,
+    settings_onlyoffice,
+    templates,
+)
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models.user import User, UserRole
@@ -54,7 +64,9 @@ def create_app() -> FastAPI:
     app.include_router(templates.router)
     app.include_router(review_tasks.router)
     app.include_router(settings_kb.router)
+    app.include_router(settings_onlyoffice.router)
     app.include_router(settings_model.router)
+    app.include_router(onlyoffice_callback.router)
     return app
 
 

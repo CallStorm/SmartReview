@@ -19,6 +19,7 @@ import type {
   KnowledgeBaseSettings,
   ModelProviderSettings,
   ModelTestResult,
+  OnlyofficeSettings,
   ProviderId,
 } from '../api/types'
 
@@ -31,6 +32,13 @@ type ModelForm = {
   minimax_base_url: string
   minimax_api_key?: string
   minimax_model: string
+}
+
+type OnlyofficeForm = {
+  docs_url: string
+  callback_base_url: string
+  editor_lang: string
+  jwt_secret?: string
 }
 
 function volcengineTestReady(m: ModelProviderSettings | undefined) {
@@ -50,6 +58,7 @@ export default function SettingsPage() {
   const { message } = AntApp.useApp()
   const [kbForm] = Form.useForm<KbForm>()
   const [modelForm] = Form.useForm<ModelForm>()
+  const [ooForm] = Form.useForm<OnlyofficeForm>()
 
   const { data: kbData, isLoading: kbLoading } = useQuery({
     queryKey: ['settings', 'knowledge-base'],
@@ -63,6 +72,14 @@ export default function SettingsPage() {
     queryKey: ['settings', 'model-providers'],
     queryFn: async () => {
       const { data: row } = await api.get<ModelProviderSettings>('/settings/model-providers')
+      return row
+    },
+  })
+
+  const { data: ooData, isLoading: ooLoading } = useQuery({
+    queryKey: ['settings', 'onlyoffice'],
+    queryFn: async () => {
+      const { data: row } = await api.get<OnlyofficeSettings>('/settings/onlyoffice')
       return row
     },
   })
@@ -85,6 +102,17 @@ export default function SettingsPage() {
       })
     }
   }, [modelData, modelForm])
+
+  useEffect(() => {
+    if (ooData) {
+      ooForm.setFieldsValue({
+        docs_url: ooData.docs_url,
+        callback_base_url: ooData.callback_base_url,
+        editor_lang: ooData.editor_lang || 'zh',
+        jwt_secret: '',
+      })
+    }
+  }, [ooData, ooForm])
 
   const saveKbMut = useMutation({
     mutationFn: async (values: KbForm) => {
@@ -134,6 +162,24 @@ export default function SettingsPage() {
       await qc.invalidateQueries({ queryKey: ['settings', 'model-providers'] })
     },
     onError: () => message.error('更新失败'),
+  })
+
+  const saveOoMut = useMutation({
+    mutationFn: async (values: OnlyofficeForm) => {
+      const payload: Record<string, string> = {
+        docs_url: values.docs_url.trim(),
+        callback_base_url: values.callback_base_url.trim(),
+        editor_lang: (values.editor_lang || 'zh').trim(),
+      }
+      const k = values.jwt_secret?.trim()
+      if (k) payload.jwt_secret = k
+      await api.put<OnlyofficeSettings>('/settings/onlyoffice', payload)
+    },
+    onSuccess: async () => {
+      message.success('已保存 OnlyOffice 配置')
+      await qc.invalidateQueries({ queryKey: ['settings', 'onlyoffice'] })
+    },
+    onError: () => message.error('保存失败'),
   })
 
   const testMut = useMutation({
@@ -202,6 +248,67 @@ export default function SettingsPage() {
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saveKbMut.isPending}>
+            保存
+          </Button>
+        </Form.Item>
+      </Form>
+    </Card>
+  )
+
+  const onlyofficeTab: ReactNode = (
+    <Card title="OnlyOffice 在线文档" loading={ooLoading}>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        配置 ONLYOFFICE Document Server 地址、与文档服务一致的 JWT 密钥，以及<strong>文档服务能访问到的</strong>
+        本 API 根地址（回调与拉取文档用）。若 Document Server 运行在 Docker 或远端，回调基址勿填本机
+        localhost（除非 Docs 与 API 同机）。未在此填写时，将使用服务端环境变量中的兜底配置。
+      </Typography.Paragraph>
+      {ooData ? (
+        <div style={{ marginBottom: 16 }}>
+          <Space>
+            <span>JWT 状态：</span>
+            {ooData.jwt_configured ? (
+              <Tag color="success">已配置（含环境变量兜底）</Tag>
+            ) : (
+              <Tag>未配置</Tag>
+            )}
+          </Space>
+        </div>
+      ) : null}
+      <Form
+        form={ooForm}
+        layout="vertical"
+        onFinish={(v) => saveOoMut.mutate(v)}
+        disabled={saveOoMut.isPending}
+        initialValues={{ editor_lang: 'zh' }}
+      >
+        <Form.Item
+          label="Document Server 地址"
+          name="docs_url"
+          rules={[{ required: true, message: '请填写 Docs 根地址' }]}
+          extra="例如 http://127.0.0.1:9080，用于加载 api.js 与打开编辑器"
+        >
+          <Input placeholder="http://127.0.0.1:9080" autoComplete="off" />
+        </Form.Item>
+        <Form.Item
+          label="回调与文档 URL 基址"
+          name="callback_base_url"
+          rules={[{ required: true, message: '请填写 API 根地址' }]}
+          extra="例如 http://192.168.1.10:8000（从 Document Server 容器内可访问）"
+        >
+          <Input placeholder="http://127.0.0.1:8000" autoComplete="off" />
+        </Form.Item>
+        <Form.Item label="编辑器界面语言" name="editor_lang">
+          <Input placeholder="zh" autoComplete="off" />
+        </Form.Item>
+        <Form.Item
+          label="JWT 密钥"
+          name="jwt_secret"
+          extra="须与 Document Server local.json 中 JWT secret 一致；留空表示不修改已保存的密钥"
+        >
+          <Input.Password autoComplete="new-password" />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saveOoMut.isPending}>
             保存
           </Button>
         </Form.Item>
@@ -409,6 +516,7 @@ export default function SettingsPage() {
         items={[
           { key: 'kb', label: '知识库', children: knowledgeTab },
           { key: 'model', label: '模型配置', children: modelTab },
+          { key: 'onlyoffice', label: 'OnlyOffice', children: onlyofficeTab },
         ]}
       />
     </div>

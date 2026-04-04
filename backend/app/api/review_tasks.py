@@ -1,7 +1,8 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, defer, joinedload
 
 from app.config import get_settings
@@ -11,9 +12,17 @@ from app.models.scheme_review_task import ReviewTaskStatus, SchemeReviewTask
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.models.user import User, UserRole
+from app.schemas.onlyoffice_editor import OnlyofficeEditorConfigResponse
 from app.schemas.review_task import ReviewTaskCreateResponse, ReviewTaskPublic
 from app.schemas.template import DownloadUrlResponse
 from app.services import minio_storage
+from app.services.onlyoffice import (
+    assert_onlyoffice_ready,
+    build_editor_config,
+    make_editor_token,
+    make_file_access_token,
+    verify_file_access_token,
+)
 from app.services.review_task_worker import process_scheme_review_task
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
@@ -107,6 +116,63 @@ def get_output_download_url(
         raise HTTPException(status_code=404, detail="暂无带批注的文档（任务未完成或结构审核未通过）")
     url = minio_storage.presigned_get_url(t.output_object_key.strip(), expires_seconds=3600)
     return DownloadUrlResponse(url=url, expires_seconds=3600)
+
+
+@router.get("/{task_id}/onlyoffice/editor-config", response_model=OnlyofficeEditorConfigResponse)
+def get_onlyoffice_editor_config(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> OnlyofficeEditorConfigResponse:
+    t = (
+        db.query(SchemeReviewTask)
+        .options(joinedload(SchemeReviewTask.scheme_type))
+        .filter(SchemeReviewTask.id == task_id)
+        .first()
+    )
+    if t is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if t.user_id != user.id and user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="无权编辑该任务文档")
+    if not (t.output_object_key or "").strip():
+        raise HTTPException(status_code=404, detail="暂无带批注的文档（任务未完成或结构审核未通过）")
+    try:
+        eff = assert_onlyoffice_ready(db)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    file_token = make_file_access_token(t.id)
+    config = build_editor_config(task=t, user=user, eff=eff, file_token=file_token)
+    oo_token = make_editor_token(config, eff.jwt_secret)
+    docs_url = eff.docs_url.rstrip("/")
+    return OnlyofficeEditorConfigResponse(docs_url=docs_url, config=config, token=oo_token)
+
+
+@router.get("/{task_id}/onlyoffice/document")
+def download_onlyoffice_document(
+    task_id: int,
+    db: Session = Depends(get_db),
+    token: str = Query(..., min_length=1),
+) -> StreamingResponse:
+    tid = verify_file_access_token(token)
+    if tid is None or tid != task_id:
+        raise HTTPException(status_code=403, detail="无效或过期的访问令牌")
+    t = db.get(SchemeReviewTask, task_id)
+    if t is None or not (t.output_object_key or "").strip():
+        raise HTTPException(status_code=404, detail="文档不存在")
+    content = minio_storage.get_object_bytes(t.output_object_key.strip())
+    title = (t.original_filename or "document.docx").strip() or "document.docx"
+    ascii_fallback = "document.docx"
+    encoded_name = quote(title, safe="")
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{encoded_name}"
+            )
+        },
+    )
 
 
 @router.post("", response_model=ReviewTaskCreateResponse, status_code=status.HTTP_201_CREATED)

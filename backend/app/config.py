@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     minimax_api_key: str = ""
     minimax_model: str = ""
 
+    # OnlyOffice（可在「设置」中覆盖；此处为未配置界面时的兜底）
+    onlyoffice_docs_url: str = ""
+    onlyoffice_jwt_secret: str = ""
+    onlyoffice_callback_base_url: str = ""
+    onlyoffice_editor_lang: str = "zh"
+
     @property
     def database_url(self) -> str:
         return (
