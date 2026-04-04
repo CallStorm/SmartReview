@@ -265,9 +265,9 @@ export default function ReviewPage() {
           {
             title: '操作',
             key: 'act',
-            width: 300,
+            width: 380,
             render: (_, row) => (
-              <Space size="small" wrap>
+              <Space size="small" wrap={false}>
                 <Button
                   type="link"
                   size="small"
