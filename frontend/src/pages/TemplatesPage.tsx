@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic } from '../api/types'
+import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
 import {
   cloneTemplateStructure,
   findNodeById,
@@ -51,6 +52,9 @@ export default function TemplatesPage() {
   })
 
   const [uploadScheme, setUploadScheme] = useState<SchemeType | null>(null)
+  const [workflowScheme, setWorkflowScheme] = useState<SchemeType | null>(null)
+  const [workflowTemplate, setWorkflowTemplate] = useState<TemplatePublic | null>(null)
+  const [workflowLoading, setWorkflowLoading] = useState(false)
   const [preview, setPreview] = useState<TemplatePublic | null>(null)
   const [structureDraft, setStructureDraft] = useState<{ nodes: TemplateNode[] } | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -181,9 +185,20 @@ export default function TemplatesPage() {
               ),
           },
           {
+            title: '工作流状态',
+            key: 'workflow_status',
+            width: 100,
+            render: (_: unknown, row: SchemeType) =>
+              row.workflow_configured ? (
+                <Tag color="processing">已设置</Tag>
+              ) : (
+                <Tag>未配置</Tag>
+              ),
+          },
+          {
             title: '操作',
             key: 'actions',
-            width: 268,
+            width: 360,
             fixed: 'right',
             render: (_: unknown, row: SchemeType) => (
               <Space size="small" wrap={false} style={{ whiteSpace: 'nowrap' }}>
@@ -204,6 +219,26 @@ export default function TemplatesPage() {
                   }}
                 >
                   结构
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    setWorkflowScheme(row)
+                    setWorkflowLoading(true)
+                    setWorkflowTemplate(null)
+                    try {
+                      const { data } = await api.get<TemplatePublic>(
+                        `/scheme-types/${row.id}/template`,
+                      )
+                      setWorkflowTemplate(data)
+                    } catch {
+                      message.warning('该方案尚未上传模版')
+                    } finally {
+                      setWorkflowLoading(false)
+                    }
+                  }}
+                >
+                  审核工作流
                 </Button>
                 <Button
                   size="small"
@@ -367,6 +402,21 @@ export default function TemplatesPage() {
           </Typography.Text>
         )}
       </Modal>
+
+      <ReviewWorkflowModal
+        open={!!workflowScheme}
+        schemeName={workflowScheme?.name ?? ''}
+        schemeTypeId={workflowScheme?.id ?? 0}
+        template={workflowTemplate}
+        loading={workflowLoading}
+        onClose={() => {
+          setWorkflowScheme(null)
+          setWorkflowTemplate(null)
+        }}
+        onSaved={() => {
+          void qc.invalidateQueries({ queryKey: ['schemes'] })
+        }}
+      />
 
       <Modal
         title={uploadScheme ? `上传模版 — ${uploadScheme.name}` : '上传模版'}

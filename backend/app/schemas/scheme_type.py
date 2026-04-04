@@ -41,5 +41,6 @@ class SchemeTypeRead(BaseModel):
     created_at: datetime | None
     updated_at: datetime | None
     template_configured: bool = False
+    workflow_configured: bool = False
 
     model_config = {"from_attributes": True}

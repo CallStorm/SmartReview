@@ -27,6 +27,7 @@ class SchemeTemplate(Base):
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     parsed_structure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_workflow: Mapped[str | None] = mapped_column(Text, nullable=True)
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

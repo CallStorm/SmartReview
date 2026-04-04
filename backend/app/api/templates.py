@@ -14,6 +14,7 @@ from app.models.scheme_type import SchemeType
 from app.models.user import User
 from app.schemas.template import (
     DownloadUrlResponse,
+    ReviewWorkflowUpdate,
     TemplatePublic,
     TemplateStructureUpdate,
     TemplateUploadResponse,
@@ -41,6 +42,12 @@ def _template_public(t: SchemeTemplate) -> TemplatePublic:
             structure = json.loads(t.parsed_structure)
         except json.JSONDecodeError:
             structure = None
+    workflow = None
+    if t.review_workflow:
+        try:
+            workflow = json.loads(t.review_workflow)
+        except json.JSONDecodeError:
+            workflow = None
     return TemplatePublic(
         id=t.id,
         scheme_type_id=t.scheme_type_id,
@@ -48,6 +55,7 @@ def _template_public(t: SchemeTemplate) -> TemplatePublic:
         object_key=t.object_key,
         original_filename=t.original_filename,
         parsed_structure=structure,
+        review_workflow=workflow,
         parsed_at=t.parsed_at,
         updated_at=t.updated_at,
     )
@@ -148,6 +156,30 @@ def update_template_structure(
         t.parsed_structure = json.dumps(body.parsed_structure, ensure_ascii=False)
     except (TypeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"无法序列化 JSON: {e!s}") from e
+    db.commit()
+    db.refresh(t)
+    return _template_public(t)
+
+
+@router.put("/scheme-types/{scheme_id}/template/review-workflow", response_model=TemplatePublic)
+def update_template_review_workflow(
+    scheme_id: int,
+    body: ReviewWorkflowUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> TemplatePublic:
+    scheme = db.get(SchemeType, scheme_id)
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="方案类型不存在")
+    t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
+    if t is None:
+        raise HTTPException(status_code=404, detail="尚未上传模版")
+    try:
+        t.review_workflow = json.dumps(
+            body.review_workflow.model_dump(), ensure_ascii=False
+        )
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"无法序列化工作流: {e!s}") from e
     db.commit()
     db.refresh(t)
     return _template_public(t)

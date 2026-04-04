@@ -51,3 +51,22 @@ class SchemeType(Base):
             return False
         nodes = data.get("nodes") if isinstance(data, dict) else None
         return isinstance(nodes, list) and len(nodes) > 0
+
+    @property
+    def workflow_configured(self) -> bool:
+        """已保存有效的审核工作流（起点→结构审核→…→结束）。"""
+        t = self.template
+        if t is None or not t.review_workflow or not str(t.review_workflow).strip():
+            return False
+        try:
+            data = json.loads(t.review_workflow)
+        except json.JSONDecodeError:
+            return False
+        steps = data.get("steps") if isinstance(data, dict) else None
+        if not isinstance(steps, list) or len(steps) < 3:
+            return False
+        return (
+            steps[0] == "start"
+            and steps[1] == "structure"
+            and steps[-1] == "end"
+        )

@@ -48,6 +48,17 @@ export interface DifyDatasetItem {
   name: string
 }
 
+export type WorkflowStepId =
+  | 'start'
+  | 'structure'
+  | 'context_consistency'
+  | 'content'
+  | 'end'
+
+export interface ReviewWorkflowData {
+  steps: WorkflowStepId[]
+}
+
 export interface SchemeType {
   id: number
   category: string
@@ -57,6 +68,8 @@ export interface SchemeType {
   updated_at: string | null
   /** 已解析且标题结构非空 */
   template_configured: boolean
+  /** 已保存审核工作流 */
+  workflow_configured: boolean
 }
 
 export interface BasisItem {
@@ -97,6 +110,7 @@ export interface TemplatePublic {
   object_key: string
   original_filename: string
   parsed_structure: { nodes: TemplateNode[] } | null
+  review_workflow: ReviewWorkflowData | null
   parsed_at: string | null
   updated_at: string | null
 }
