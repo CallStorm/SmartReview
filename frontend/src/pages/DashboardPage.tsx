@@ -16,6 +16,21 @@ const STATUS_LABEL: Record<string, string> = {
   failed: '失败',
 }
 
+/** G2 轴默认还会套一层 labelOpacity，与半透明 fill 叠乘后对比度不足 */
+const CHART_AXIS_LABEL = {
+  labelFill: '#262626',
+  labelOpacity: 1,
+  labelFontSize: 12,
+} as const
+
+const chartAxisY = { title: false, ...CHART_AXIS_LABEL } as const
+const chartAxisX = { title: false, ...CHART_AXIS_LABEL } as const
+const chartLegendText = {
+  itemLabelFill: '#262626',
+  itemLabelFillOpacity: 1,
+  itemLabelFontSize: 12,
+} as const
+
 function fillDailySeries(rows: { date: string; count: number }[], days: number) {
   const map = new Map(rows.map((r) => [r.date, r.count]))
   const out: { date: string; count: number }[] = []
@@ -235,8 +250,12 @@ export default function DashboardPage() {
                     height={300}
                     autoFit
                     axis={{
-                      x: { title: false, labelFill: 'rgba(0,0,0,0.45)' },
-                      y: { title: false, labelFill: 'rgba(0,0,0,0.45)' },
+                      x: { ...chartAxisX, labelAutoRotate: false },
+                      y: {
+                        ...chartAxisY,
+                        gridStroke: 'rgba(0, 0, 0, 0.08)',
+                        gridStrokeOpacity: 1,
+                      },
                     }}
                     style={{ stroke: '#1677ff', lineWidth: 2 }}
                   />
@@ -257,12 +276,15 @@ export default function DashboardPage() {
                       autoFit
                       label={{
                         text: (d: { type: string; value: number }) => `${d.type} ${d.value}`,
-                        style: { fill: 'rgba(0,0,0,0.65)', fontSize: 11 },
+                        style: {
+                          fill: '#1f1f1f',
+                          fillOpacity: 1,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        },
                       }}
                       legend={{
-                        color: {
-                          itemLabelFill: 'rgba(0,0,0,0.65)',
-                        },
+                        color: chartLegendText,
                       }}
                     />
                   )}
@@ -283,8 +305,16 @@ export default function DashboardPage() {
                       autoFit
                       transpose
                       axis={{
-                        x: { title: false, labelFill: 'rgba(0,0,0,0.45)' },
-                        y: { title: false, labelFill: 'rgba(0,0,0,0.45)' },
+                        x: {
+                          ...chartAxisX,
+                          labelAutoRotate: false,
+                          labelAutoEllipsis: true,
+                        },
+                        y: {
+                          ...chartAxisY,
+                          gridStroke: 'rgba(0, 0, 0, 0.08)',
+                          gridStrokeOpacity: 1,
+                        },
                       }}
                       style={{ fill: '#52c41a' }}
                     />
@@ -310,11 +340,15 @@ export default function DashboardPage() {
                       autoFit
                       axis={{
                         x: {
-                          title: false,
-                          labelFill: 'rgba(0,0,0,0.45)',
-                          labelAutoRotate: { type: 'hide' },
+                          ...chartAxisX,
+                          labelAutoRotate: false,
+                          labelAutoEllipsis: true,
                         },
-                        y: { title: false, labelFill: 'rgba(0,0,0,0.45)' },
+                        y: {
+                          ...chartAxisY,
+                          gridStroke: 'rgba(0, 0, 0, 0.08)',
+                          gridStrokeOpacity: 1,
+                        },
                       }}
                       style={{ fill: '#faad14' }}
                     />
