@@ -1,5 +1,6 @@
 import {
   CloudDownloadOutlined,
+  ExportOutlined,
   FileSearchOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
@@ -200,11 +201,21 @@ export default function ReviewPage() {
           {
             title: '操作',
             key: 'act',
-            width: 96,
+            width: 200,
             render: (_, row) => (
-              <Button type="link" size="small" onClick={() => setDetail(row)}>
-                详情
-              </Button>
+              <Space size="small" wrap>
+                <Button type="link" size="small" onClick={() => setDetail(row)}>
+                  人工审阅
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ExportOutlined />}
+                  onClick={() => message.info('导出报告功能开发中')}
+                >
+                  导出报告
+                </Button>
+              </Space>
             ),
           },
         ]}
@@ -262,7 +273,7 @@ export default function ReviewPage() {
       </Modal>
 
       <Modal
-        title={`审核任务 #${detail?.id ?? ''}`}
+        title={`人工审阅 — 任务 #${detail?.id ?? ''}`}
         open={!!detail}
         onCancel={() => setDetail(null)}
         footer={null}
