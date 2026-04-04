@@ -13,6 +13,12 @@ class ReviewTaskPublic(BaseModel):
     status: str
     result_text: str | None = None
     error_message: str | None = None
+    review_stage: str | None = Field(default=None, description="处理中时的当前审核阶段 id")
+    review_result_json: str | None = Field(
+        default=None,
+        description="统一审核报告 JSON；列表接口可为空以减负",
+    )
+    output_object_key: str | None = Field(default=None, description="带批注的 docx 对象键")
     original_filename: str
     created_at: datetime
     updated_at: datetime

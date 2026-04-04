@@ -37,7 +37,10 @@ class SchemeReviewTask(Base):
     review_log: Mapped[str | None] = mapped_column(Text, nullable=True)
     minio_bucket: Mapped[str] = mapped_column(String(128), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    output_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    review_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    review_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

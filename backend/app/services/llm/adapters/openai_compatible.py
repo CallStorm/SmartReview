@@ -17,14 +17,19 @@ def chat_openai_compatible(
     api_key: str,
     model: str,
     user_message: str,
+    system: str | None = None,
     max_tokens: int = 32,
     timeout: float = 60.0,
 ) -> str:
     root = base_url.rstrip("/")
     url = f"{root}/chat/completions"
+    messages: list[dict[str, Any]] = []
+    if system and system.strip():
+        messages.append({"role": "system", "content": system.strip()})
+    messages.append({"role": "user", "content": user_message})
     payload: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": "user", "content": user_message}],
+        "messages": messages,
         "max_tokens": max_tokens,
     }
     headers = {

@@ -120,6 +120,29 @@ export interface TemplatePublic {
 
 export type ReviewTaskStatus = 'pending' | 'processing' | 'succeeded' | 'failed'
 
+export interface ReportIssue {
+  issue_id: string
+  severity: string
+  message: string
+  evidence?: string
+  anchor?: Record<string, unknown>
+  related?: Record<string, unknown>
+}
+
+export interface ReportStep {
+  step_id: string
+  passed: boolean
+  summary: string
+  issues: ReportIssue[]
+}
+
+export interface ReviewReportV1 {
+  version: 1
+  steps: ReportStep[]
+  generated_at?: string
+  model_provider?: string | null
+}
+
 export interface ReviewTask {
   id: number
   scheme_type_id: number
@@ -128,6 +151,10 @@ export interface ReviewTask {
   status: ReviewTaskStatus
   result_text: string | null
   error_message: string | null
+  review_stage?: string | null
+  /** 详情接口返回；列表通常不返回 */
+  review_result_json?: string | null
+  output_object_key?: string | null
   /** 列表接口不返回；详情接口返回审核过程日志 */
   review_log?: string | null
   original_filename: string

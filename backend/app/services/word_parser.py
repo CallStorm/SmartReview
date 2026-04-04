@@ -43,6 +43,7 @@ def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
             return nodes_out
         return stack[-1]["children"]
 
+    para_index = 0
     for para in doc.paragraphs:
         text = (para.text or "").strip()
         level = _heading_level(para)
@@ -53,6 +54,7 @@ def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
                 "id": next_id(),
                 "level": level,
                 "title": text,
+                "heading_para_index": para_index,
                 "content": [],
                 "children": [],
             }
@@ -60,6 +62,7 @@ def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
             stack.append(node)
         elif text and stack:
             stack[-1]["content"].append(text)
+        para_index += 1
 
     return {"nodes": nodes_out}
 

@@ -9,27 +9,13 @@ from app.models.knowledge_base_settings import KnowledgeBaseSettings
 from app.models.user import User
 from app.schemas.knowledge_base import DifyDatasetItem, KnowledgeBasePublic, KnowledgeBaseUpdate
 from app.services.dify_client import list_dataset_catalog
+from app.services.dify_settings import get_dify_url_and_key
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-def _dify_url_and_key(db: Session) -> tuple[str, str]:
-    settings = get_settings()
-    row = db.query(KnowledgeBaseSettings).order_by(KnowledgeBaseSettings.id).first()
-    url = ""
-    key_plain = ""
-    if row:
-        url = (row.dify_base_url or "").strip()
-        key_plain = (row.dify_api_key or "").strip()
-    if not url:
-        url = (settings.dify_base_url or "").strip()
-    if not key_plain:
-        key_plain = (settings.dify_api_key or "").strip()
-    return url, key_plain
-
-
 def _effective_config(db: Session) -> tuple[str, bool]:
-    url, key_plain = _dify_url_and_key(db)
+    url, key_plain = get_dify_url_and_key(db)
     return url, bool(key_plain)
 
 
@@ -74,7 +60,7 @@ def list_dify_datasets(
     _: User = Depends(require_admin),
 ) -> list[DifyDatasetItem]:
     """代理 Dify 知识库列表（使用服务端保存的 Dataset API 配置）。"""
-    url, key = _dify_url_and_key(db)
+    url, key = get_dify_url_and_key(db)
     try:
         rows = list_dataset_catalog(url, key)
     except ValueError as e:

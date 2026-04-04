@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import AppLayout from './components/AppLayout'
 import BasisPage from './pages/BasisPage'
 import LoginPage from './pages/LoginPage'
+import ManualReviewPage from './pages/ManualReviewPage'
+import ReviewEditPlaceholderPage from './pages/ReviewEditPlaceholderPage'
 import ReviewPage from './pages/ReviewPage'
 import SchemesPage from './pages/SchemesPage'
 import SettingsPage from './pages/SettingsPage'
@@ -70,6 +72,8 @@ function AppRoutes() {
         <Route index element={<Navigate to="/schemes" replace />} />
         <Route path="schemes" element={<SchemesPage />} />
         <Route path="review" element={<ReviewPage />} />
+        <Route path="review/:taskId/manual" element={<ManualReviewPage />} />
+        <Route path="review/:taskId/edit" element={<ReviewEditPlaceholderPage />} />
         <Route
           path="basis"
           element={

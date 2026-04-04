@@ -8,7 +8,6 @@ import {
 import {
   App as AntApp,
   Button,
-  Descriptions,
   Form,
   Modal,
   Select,
@@ -21,6 +20,7 @@ import {
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReviewTask, SchemeType } from '../api/types'
 
@@ -31,19 +31,49 @@ const statusLabel: Record<string, string> = {
   failed: '失败',
 }
 
+const REVIEW_STAGE_LABELS: Record<string, string> = {
+  structure: '结构审核',
+  compilation_basis: '编制依据审核',
+  context_consistency: '上下文一致性',
+  content: '内容审核',
+}
+
 function statusTag(status: string) {
   const color =
     status === 'succeeded' ? 'success' : status === 'failed' ? 'error' : 'processing'
   return <Tag color={color}>{statusLabel[status] ?? status}</Tag>
 }
 
+function taskStatusCell(row: ReviewTask) {
+  if (row.status === 'processing' && row.review_stage) {
+    const label = REVIEW_STAGE_LABELS[row.review_stage] ?? row.review_stage
+    return <Tag color="processing">{label}</Tag>
+  }
+  return statusTag(row.status)
+}
+
+async function downloadWordV2(taskId: number): Promise<void> {
+  const { data } = await api.get<{ url: string }>(
+    `/review-tasks/${taskId}/output-download-url`,
+  )
+  const res = await fetch(data.url)
+  if (!res.ok) throw new Error('下载失败')
+  const blob = await res.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'word_v2.docx'
+  a.rel = 'noopener'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 export default function ReviewPage() {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const { message } = AntApp.useApp()
   const [schemeId, setSchemeId] = useState<number | null>(null)
   const [submitOpen, setSubmitOpen] = useState(false)
   const [fileList, setFileList] = useState<UploadFile[]>([])
-  const [detail, setDetail] = useState<ReviewTask | null>(null)
   const [logModalTaskId, setLogModalTaskId] = useState<number | null>(null)
   const [logLoading, setLogLoading] = useState(false)
   const [logContent, setLogContent] = useState<string | null>(null)
@@ -161,6 +191,19 @@ export default function ReviewPage() {
     }
   }
 
+  const handleExport = async (row: ReviewTask) => {
+    if (!row.output_object_key?.trim()) {
+      message.warning('暂无带批注文档（任务未完成或结构审核未通过）')
+      return
+    }
+    try {
+      await downloadWordV2(row.id)
+      message.success('已开始下载 word_v2.docx')
+    } catch {
+      message.error('导出失败')
+    }
+  }
+
   return (
     <div>
       <div
@@ -214,18 +257,22 @@ export default function ReviewPage() {
           { title: '文件', dataIndex: 'original_filename', ellipsis: true },
           {
             title: '状态',
-            dataIndex: 'status',
-            width: 110,
-            render: (s: string) => statusTag(s),
+            key: 'status',
+            width: 130,
+            render: (_, row) => taskStatusCell(row),
           },
           { title: '创建时间', dataIndex: 'created_at', width: 188 },
           {
             title: '操作',
             key: 'act',
-            width: 280,
+            width: 300,
             render: (_, row) => (
               <Space size="small" wrap>
-                <Button type="link" size="small" onClick={() => setDetail(row)}>
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => navigate(`/review/${row.id}/manual`)}
+                >
                   人工审阅
                 </Button>
                 <Button
@@ -240,7 +287,8 @@ export default function ReviewPage() {
                   type="link"
                   size="small"
                   icon={<ExportOutlined />}
-                  onClick={() => message.info('导出报告功能开发中')}
+                  disabled={!row.output_object_key?.trim()}
+                  onClick={() => void handleExport(row)}
                 >
                   导出报告
                 </Button>
@@ -332,44 +380,6 @@ export default function ReviewPage() {
           >
             {logContent ?? ''}
           </pre>
-        )}
-      </Modal>
-
-      <Modal
-        title={`人工审阅 — 任务 #${detail?.id ?? ''}`}
-        open={!!detail}
-        onCancel={() => setDetail(null)}
-        footer={null}
-        width={640}
-        destroyOnClose
-      >
-        {detail && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="方案类型">
-              {detail.scheme_category} / {detail.scheme_name}
-            </Descriptions.Item>
-            <Descriptions.Item label="文件">{detail.original_filename}</Descriptions.Item>
-            <Descriptions.Item label="状态">{statusTag(detail.status)}</Descriptions.Item>
-            <Descriptions.Item label="创建时间">{detail.created_at}</Descriptions.Item>
-            <Descriptions.Item label="更新时间">{detail.updated_at}</Descriptions.Item>
-            {detail.error_message && (
-              <Descriptions.Item label="错误">{detail.error_message}</Descriptions.Item>
-            )}
-            {detail.result_text && (
-              <Descriptions.Item label="审核结果">
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: 'pre-wrap',
-                    fontFamily: 'inherit',
-                    fontSize: 13,
-                  }}
-                >
-                  {detail.result_text}
-                </pre>
-              </Descriptions.Item>
-            )}
-          </Descriptions>
         )}
       </Modal>
     </div>
