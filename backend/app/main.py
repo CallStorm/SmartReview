@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.api import (
+    admin_dashboard,
     auth,
     basis,
     onlyoffice_callback,
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(auth.router)
+    app.include_router(admin_dashboard.router)
     app.include_router(users.router)
     app.include_router(scheme_types.router)
     app.include_router(basis.router)

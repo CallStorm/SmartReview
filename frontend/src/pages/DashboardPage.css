@@ -1,0 +1,92 @@
+/* 与 AppLayout 主内容区 #fafafa 协调；纵向滚动由 .app-outlet--scroll 承担，避免双滚动条 */
+.dashboard-wall {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 20px 24px 28px;
+  background: linear-gradient(180deg, #f5f7fa 0%, #fafafa 32%, #fafafa 100%);
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.dashboard-wall__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dashboard-wall__title {
+  font-weight: 600;
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.88);
+  letter-spacing: 0.02em;
+}
+
+.dashboard-wall__hint {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.dashboard-wall .ant-card {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.dashboard-wall .ant-card-head {
+  border-bottom-color: #f0f0f0;
+  color: rgba(0, 0, 0, 0.88);
+  min-height: 44px;
+}
+
+.dashboard-wall .ant-card-head-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+/* 指标名称：提高对比度（原暗色页过浅） */
+.dashboard-wall .ant-statistic-title {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.dashboard-wall .ant-statistic-content {
+  color: rgba(0, 0, 0, 0.88);
+  font-weight: 600;
+}
+
+.dashboard-wall .ant-statistic-content-suffix {
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.55);
+  margin-inline-start: 4px;
+}
+
+.dashboard-wall__chart {
+  min-height: 280px;
+}
+
+.dashboard-wall__dify-warn {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.dashboard-wall__dify-warn--emphasis {
+  color: #ad6800;
+}
+
+.dashboard-wall__empty {
+  padding: 48px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}

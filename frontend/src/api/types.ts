@@ -179,3 +179,53 @@ export interface ReviewTask {
   created_at: string
   updated_at: string
 }
+
+export interface DashboardTaskByDay {
+  date: string
+  count: number
+}
+
+export interface DashboardTaskByStatus {
+  status: string
+  count: number
+}
+
+export interface DashboardTaskBySchemeType {
+  scheme_type_id: number
+  scheme_name: string
+  scheme_category: string
+  count: number
+}
+
+export interface DashboardDifyDataset {
+  id: string
+  name: string
+  segment_count: number
+  truncated: boolean
+}
+
+export interface DashboardDifyBlock {
+  configured: boolean
+  dataset_count: number
+  segment_total: number
+  datasets: DashboardDifyDataset[]
+  error: string | null
+  truncated: boolean
+}
+
+export interface DashboardSummary {
+  users_total: number
+  users_admin: number
+  users_regular: number
+  scheme_types_total: number
+  templates_total: number
+  basis_items_total: number
+  review_tasks_total: number
+  review_tasks_today: number
+  active_submitters_7d: number
+  completion_rate: number | null
+  tasks_per_day: DashboardTaskByDay[]
+  tasks_by_status: DashboardTaskByStatus[]
+  tasks_by_scheme_type: DashboardTaskBySchemeType[]
+  dify: DashboardDifyBlock
+}

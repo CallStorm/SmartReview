@@ -2,6 +2,7 @@ import './AppLayout.css'
 
 import {
   AppstoreOutlined,
+  BarChartOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   FormOutlined,
@@ -29,7 +30,6 @@ export default function AppLayout() {
 
   const isOnlyofficeEdit = /^\/review\/[^/]+\/edit$/.test(loc.pathname)
   const isManualReview = /^\/review\/[^/]+\/manual$/.test(loc.pathname)
-  const isReviewFullBleed = isOnlyofficeEdit || isManualReview
   const pageTitle = resolvePageTitle(loc.pathname)
 
   const items = [
@@ -37,6 +37,7 @@ export default function AppLayout() {
     { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
     ...(user?.role === 'admin'
       ? [
+          { key: '/dashboard', icon: <BarChartOutlined />, label: '数据看板' },
           { key: '/basis', icon: <FileTextOutlined />, label: '编制依据管理' },
           { key: '/templates', icon: <FormOutlined />, label: '模板管理' },
           { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
@@ -48,8 +49,9 @@ export default function AppLayout() {
   return (
     <Layout
       style={{
-        minHeight: '100vh',
-        ...(isOnlyofficeEdit ? { height: '100vh', overflow: 'hidden' } : {}),
+        height: '100vh',
+        maxHeight: '100vh',
+        overflow: 'hidden',
         background: '#fafafa',
         display: 'flex',
       }}
@@ -60,6 +62,7 @@ export default function AppLayout() {
         collapsedWidth={80}
         theme="light"
         style={{
+          height: '100%',
           overflow: 'hidden',
           borderRight: '1px solid #f0f0f0',
         }}
@@ -173,14 +176,11 @@ export default function AppLayout() {
           flex: 1,
           minWidth: 0,
           minHeight: 0,
+          maxHeight: '100%',
           background: '#fafafa',
-          ...(isReviewFullBleed
-            ? {
-                display: 'flex',
-                flexDirection: 'column' as const,
-                overflow: 'hidden',
-              }
-            : {}),
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
         <Header className="app-main-header">

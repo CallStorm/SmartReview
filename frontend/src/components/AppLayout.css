@@ -1,7 +1,8 @@
 .app-sider-inner {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: #fff;
 }
 
@@ -50,9 +51,12 @@
   pointer-events: none;
 }
 
+/* 侧栏整体随视口固定；仅菜单区在条目过多时可单独滚动，顶栏 logo 与底部用户区不跟着滚 */
 .app-sider-menu {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 12px 10px;
   border-inline: none !important;
 }

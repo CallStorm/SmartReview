@@ -1,5 +1,6 @@
 /** 顶栏与页面标题：与侧栏文案对齐 */
 export function resolvePageTitle(pathname: string): string {
+  if (pathname === '/dashboard') return '数据看板'
   if (pathname === '/schemes') return '方案类型管理'
   if (pathname === '/review') return '方案审核'
   if (/^\/review\/[^/]+\/manual$/.test(pathname)) return '人工审阅'

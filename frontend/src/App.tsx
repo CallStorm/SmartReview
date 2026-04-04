@@ -11,6 +11,7 @@ import ReviewPage from './pages/ReviewPage'
 import SchemesPage from './pages/SchemesPage'
 import SettingsPage from './pages/SettingsPage'
 import TemplatesPage from './pages/TemplatesPage'
+import DashboardPage from './pages/DashboardPage'
 import UsersPage from './pages/UsersPage'
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -45,6 +46,14 @@ function RequireAdmin({ children }: { children: ReactElement }) {
   return children
 }
 
+function DefaultIndexRedirect() {
+  const { user } = useAuth()
+  if (user?.role === 'admin') {
+    return <Navigate to="/dashboard" replace />
+  }
+  return <Navigate to="/schemes" replace />
+}
+
 function AppRoutes() {
   const { user, loading, token } = useAuth()
 
@@ -59,7 +68,7 @@ function AppRoutes() {
               <p className="app-auth-loading__hint">加载中…</p>
             </div>
           ) : token && user ? (
-            <Navigate to="/schemes" replace />
+            <Navigate to={user.role === 'admin' ? '/dashboard' : '/schemes'} replace />
           ) : (
             <LoginPage />
           )
@@ -73,7 +82,15 @@ function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/schemes" replace />} />
+        <Route index element={<DefaultIndexRedirect />} />
+        <Route
+          path="dashboard"
+          element={
+            <RequireAdmin>
+              <DashboardPage />
+            </RequireAdmin>
+          }
+        />
         <Route path="schemes" element={<SchemesPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="review/:taskId/manual" element={<ManualReviewPage />} />
