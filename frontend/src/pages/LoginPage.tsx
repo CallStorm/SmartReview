@@ -22,7 +22,7 @@ export default function LoginPage() {
           onFinish={async (v) => {
             const phone = (v.phone as string)?.trim() || ''
             if (!phone) {
-              message.warning('请输入手机号')
+              message.warning('请输入账号或手机号')
               return
             }
             try {
@@ -34,14 +34,18 @@ export default function LoginPage() {
             }
           }}
         >
-          <Form.Item name="phone" label="手机号" rules={[{ required: true, message: '请输入手机号' }]}>
-            <Input autoComplete="tel" placeholder="请输入手机号" allowClear />
+          <Form.Item
+            name="phone"
+            label="账号/手机号"
+            rules={[{ required: true, message: '请输入账号或手机号' }]}
+          >
+            <Input autoComplete="username" placeholder="账号/手机号" allowClear />
           </Form.Item>
           <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
             <Input.Password autoComplete="current-password" placeholder="请输入密码" />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
-            <Button className="login-page__submit" htmlType="submit" block>
+            <Button className="login-page__submit" type="primary" htmlType="submit" block>
               登录
             </Button>
           </Form.Item>

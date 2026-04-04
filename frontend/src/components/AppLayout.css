@@ -12,6 +12,7 @@
   padding: 16px 18px;
   border-bottom: 1px solid #f0f0f0;
   flex-shrink: 0;
+  min-height: 68px;
 }
 
 .app-sider-brand--collapsed {
@@ -19,27 +20,34 @@
   padding: 16px 12px;
 }
 
-.app-sider-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #1677ff;
-  color: #fff;
+/* 仅展示素材图左侧图形，裁掉右侧文字区 */
+.app-sider-logo-clip {
+  height: 40px;
+  overflow: hidden;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 18px;
-  flex-shrink: 0;
-  line-height: 1;
+  border-radius: 8px;
 }
 
-.app-sider-title {
-  font-weight: 700;
-  font-size: 16px;
-  color: rgba(0, 0, 0, 0.88);
-  white-space: nowrap;
-  letter-spacing: 0.02em;
+.app-sider-brand:not(.app-sider-brand--collapsed) .app-sider-logo-clip {
+  width: 112px;
+}
+
+.app-sider-brand--collapsed .app-sider-logo-clip {
+  width: 40px;
+  height: 36px;
+}
+
+.app-sider-logo {
+  height: 36px;
+  width: auto;
+  max-width: none;
+  object-fit: contain;
+  object-position: left center;
+  display: block;
+  user-select: none;
+  pointer-events: none;
 }
 
 .app-sider-menu {
@@ -59,9 +67,14 @@
 }
 
 .app-sider-menu.ant-menu-inline .ant-menu-item-selected {
-  background: #f5f5f5 !important;
-  color: rgba(0, 0, 0, 0.88) !important;
-  font-weight: 500;
+  background: rgba(22, 119, 255, 0.08) !important;
+  color: #1677ff !important;
+  font-weight: 600;
+  box-shadow: inset 4px 0 0 #1677ff;
+}
+
+.app-sider-menu.ant-menu-inline:not(.ant-menu-inline-collapsed) .ant-menu-item .ant-menu-item-icon {
+  margin-inline-end: 12px !important;
 }
 
 .app-sider-menu.ant-menu-inline .ant-menu-item-selected::after {

@@ -5,7 +5,6 @@
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  background: #f0f0f0;
   font-family:
     'PingFang SC',
     'Microsoft YaHei',
@@ -13,6 +12,23 @@
     system-ui,
     -apple-system,
     sans-serif;
+  background-color: #f3f6fa;
+  background-image:
+    linear-gradient(135deg, rgba(22, 119, 255, 0.04) 0%, transparent 42%, rgba(22, 119, 255, 0.03) 100%),
+    repeating-linear-gradient(
+      -12deg,
+      transparent,
+      transparent 11px,
+      rgba(22, 119, 255, 0.025) 11px,
+      rgba(22, 119, 255, 0.025) 12px
+    ),
+    repeating-linear-gradient(
+      78deg,
+      transparent,
+      transparent 23px,
+      rgba(0, 0, 0, 0.012) 23px,
+      rgba(0, 0, 0, 0.012) 24px
+    );
 }
 
 .login-page__card {
@@ -22,7 +38,10 @@
   background: #fff;
   border-radius: 14px;
   padding: 40px 40px 28px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 40px rgba(15, 23, 42, 0.06),
+    0 24px 64px rgba(22, 119, 255, 0.05);
 }
 
 .login-page__title {
@@ -69,15 +88,6 @@
   border-radius: 8px;
   font-size: 15px;
   font-weight: 500;
-  background: #000 !important;
-  border-color: #000 !important;
-  color: #fff !important;
-}
-
-.login-page__submit.ant-btn:hover {
-  background: #262626 !important;
-  border-color: #262626 !important;
-  color: #fff !important;
 }
 
 .login-page__footer {

@@ -18,6 +18,9 @@ import { useAuth } from '../auth/AuthContext'
 
 const { Header, Sider, Content } = Layout
 
+/** 静态资源来自 `frontend/public/brand-logo.png`（由陕建数科 logo 素材同步） */
+const SIDEBAR_LOGO_SRC = `${import.meta.env.BASE_URL}brand-logo.png`
+
 export default function AppLayout() {
   const { user, logout } = useAuth()
   const nav = useNavigate()
@@ -58,10 +61,14 @@ export default function AppLayout() {
                 : 'app-sider-brand'
             }
           >
-            <div className="app-sider-logo" aria-hidden>
-              施
+            <div className="app-sider-logo-clip">
+              <img
+                className="app-sider-logo"
+                src={SIDEBAR_LOGO_SRC}
+                alt="陕建数科"
+                draggable={false}
+              />
             </div>
-            {!collapsed && <span className="app-sider-title">施工方案审核</span>}
           </div>
 
           <Menu

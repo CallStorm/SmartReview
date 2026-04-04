@@ -1,9 +1,13 @@
+import './ReviewPage.css'
+
 import {
+  AuditOutlined,
   CloudDownloadOutlined,
   ExportOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   UploadOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import {
   App as AntApp,
@@ -14,6 +18,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
@@ -38,16 +43,33 @@ const REVIEW_STAGE_LABELS: Record<string, string> = {
   content: '内容审核',
 }
 
+const tagSx = { border: 'none', marginInlineEnd: 0 } as const
+
+function pillTag(text: string, background: string, color: string) {
+  return (
+    <Tag style={{ ...tagSx, background, color }}>
+      {text}
+    </Tag>
+  )
+}
+
 function statusTag(status: string) {
-  const color =
-    status === 'succeeded' ? 'success' : status === 'failed' ? 'error' : 'processing'
-  return <Tag color={color}>{statusLabel[status] ?? status}</Tag>
+  if (status === 'succeeded') {
+    return pillTag(statusLabel[status] ?? status, '#f6ffed', '#237804')
+  }
+  if (status === 'failed') {
+    return pillTag(statusLabel[status] ?? status, '#fff2f0', '#a8071a')
+  }
+  return pillTag(statusLabel[status] ?? status, '#e6f4ff', '#0958d9')
 }
 
 function taskStatusCell(row: ReviewTask) {
   if (row.status === 'processing' && row.review_stage) {
     const label = REVIEW_STAGE_LABELS[row.review_stage] ?? row.review_stage
-    return <Tag color="processing">{label}</Tag>
+    if (row.review_stage === 'content') {
+      return pillTag(label, '#fff7e6', '#d46b08')
+    }
+    return pillTag(label, '#e6f4ff', '#0958d9')
   }
   return statusTag(row.status)
 }
@@ -109,6 +131,13 @@ export default function ReviewPage() {
       return active ? 3000 : false
     },
   })
+
+  const reviewStats = useMemo(() => {
+    const total = tasks.length
+    const pendingManual = tasks.filter((t) => t.status === 'succeeded').length
+    const anomaly = tasks.filter((t) => t.status === 'failed').length
+    return { total, pendingManual, anomaly }
+  }, [tasks])
 
   const submitMut = useMutation({
     mutationFn: async ({ sid, file }: { sid: number; file: File }) => {
@@ -205,98 +234,138 @@ export default function ReviewPage() {
   }
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 20,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FileSearchOutlined style={{ fontSize: 22, color: '#1677ff' }} />
-          <span style={{ fontSize: 18, fontWeight: 600 }}>方案审核</span>
+    <div className="review-page">
+      <div className="review-page__toolbar">
+        <div className="review-page__title-row">
+          <div className="review-page__title-inner">
+            <FileSearchOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+            <span style={{ fontSize: 18, fontWeight: 600 }}>方案审核</span>
+          </div>
         </div>
-        <Space wrap size="middle" style={{ justifyContent: 'flex-end' }}>
-          <Select
-            placeholder="选择方案类型"
-            loading={schemesLoading}
-            style={{ minWidth: 260 }}
-            allowClear
-            value={schemeId ?? undefined}
-            onChange={(v) => setSchemeId(typeof v === 'number' ? v : null)}
-            options={withTemplate.map((s) => ({
-              value: s.id,
-              label: `${s.category} / ${s.name}`,
-            }))}
-          />
-          <Button icon={<CloudDownloadOutlined />} onClick={handleDownloadTemplate}>
-            下载模版
-          </Button>
-          <Button type="primary" icon={<UploadOutlined />} onClick={openSubmit}>
-            方案审核
-          </Button>
-        </Space>
+
+        <div className="review-page__stats">
+          <div className="review-page__stat-card">
+            <FileSearchOutlined className="review-page__stat-icon" aria-hidden />
+            <div className="review-page__stat-body">
+              <div className="review-page__stat-label">总审核数</div>
+              <Typography.Title level={4} className="review-page__stat-value">
+                {reviewStats.total}
+              </Typography.Title>
+            </div>
+          </div>
+          <div className="review-page__stat-card">
+            <AuditOutlined className="review-page__stat-icon review-page__stat-icon--audit" aria-hidden />
+            <div className="review-page__stat-body">
+              <div className="review-page__stat-label">待人工审核</div>
+              <Typography.Title level={4} className="review-page__stat-value">
+                {reviewStats.pendingManual}
+              </Typography.Title>
+            </div>
+          </div>
+          <div className="review-page__stat-card">
+            <WarningOutlined className="review-page__stat-icon review-page__stat-icon--warn" aria-hidden />
+            <div className="review-page__stat-body">
+              <div className="review-page__stat-label">审核异常</div>
+              <Typography.Title level={4} className="review-page__stat-value">
+                {reviewStats.anomaly}
+              </Typography.Title>
+            </div>
+          </div>
+        </div>
+
+        <div className="review-page__filters">
+          <Space wrap size="middle">
+            <Select
+              placeholder="选择方案类型"
+              loading={schemesLoading}
+              style={{ minWidth: 260 }}
+              allowClear
+              value={schemeId ?? undefined}
+              onChange={(v) => setSchemeId(typeof v === 'number' ? v : null)}
+              options={withTemplate.map((s) => ({
+                value: s.id,
+                label: `${s.category} / ${s.name}`,
+              }))}
+            />
+            <Button icon={<CloudDownloadOutlined />} onClick={handleDownloadTemplate}>
+              下载模版
+            </Button>
+            <Button type="primary" icon={<UploadOutlined />} onClick={openSubmit}>
+              方案审核
+            </Button>
+          </Space>
+        </div>
       </div>
 
-      <Table<ReviewTask>
-        rowKey="id"
-        loading={tasksLoading}
-        dataSource={tasks}
-        pagination={{ pageSize: 15, showSizeChanger: true }}
-        columns={[
-          { title: 'ID', dataIndex: 'id', width: 72 },
-          {
-            title: '方案类型',
-            key: 'scheme',
-            render: (_, row) => `${row.scheme_category} / ${row.scheme_name}`,
-          },
-          { title: '文件', dataIndex: 'original_filename', ellipsis: true },
-          {
-            title: '状态',
-            key: 'status',
-            width: 130,
-            render: (_, row) => taskStatusCell(row),
-          },
-          { title: '创建时间', dataIndex: 'created_at', width: 188 },
-          {
-            title: '操作',
-            key: 'act',
-            width: 380,
-            render: (_, row) => (
-              <Space size="small" wrap={false}>
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => navigate(`/review/${row.id}/manual`)}
-                >
-                  人工审阅
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<FileTextOutlined />}
-                  onClick={() => void openReviewLog(row.id)}
-                >
-                  审核日志
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<ExportOutlined />}
-                  disabled={!row.output_object_key?.trim()}
-                  onClick={() => void handleExport(row)}
-                >
-                  导出报告
-                </Button>
-              </Space>
-            ),
-          },
-        ]}
-      />
+      <div className="review-page__table-wrap">
+        <Table<ReviewTask>
+          rowKey="id"
+          loading={tasksLoading}
+          dataSource={tasks}
+          pagination={{ pageSize: 15, showSizeChanger: true }}
+          columns={[
+            { title: 'ID', dataIndex: 'id', width: 72 },
+            {
+              title: '方案类型',
+              key: 'scheme',
+              render: (_, row) => `${row.scheme_category} / ${row.scheme_name}`,
+            },
+            {
+              title: '文件',
+              key: 'original_filename',
+              ellipsis: { showTitle: false },
+              render: (_, row) => (
+                <Tooltip title={row.original_filename}>
+                  <Typography.Text ellipsis className="review-page__filename">
+                    {row.original_filename}
+                  </Typography.Text>
+                </Tooltip>
+              ),
+            },
+            {
+              title: '状态',
+              key: 'status',
+              width: 130,
+              render: (_, row) => taskStatusCell(row),
+            },
+            { title: '创建时间', dataIndex: 'created_at', width: 188 },
+            {
+              title: '操作',
+              key: 'act',
+              width: 400,
+              render: (_, row) => (
+                <Space size="middle" wrap={false}>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<AuditOutlined />}
+                    onClick={() => navigate(`/review/${row.id}/manual`)}
+                  >
+                    人工审阅
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<FileTextOutlined />}
+                    onClick={() => void openReviewLog(row.id)}
+                  >
+                    审核日志
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<ExportOutlined />}
+                    disabled={!row.output_object_key?.trim()}
+                    onClick={() => void handleExport(row)}
+                  >
+                    导出报告
+                  </Button>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </div>
 
       <Modal
         title="提交方案审核"
