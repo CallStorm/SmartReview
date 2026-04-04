@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, joinedload
 
 from app.config import get_settings
 from app.database import get_db
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 
-def _task_public(t: SchemeReviewTask) -> ReviewTaskPublic:
+def _task_public(t: SchemeReviewTask, *, include_review_log: bool = True) -> ReviewTaskPublic:
     st = t.scheme_type
     return ReviewTaskPublic(
         id=t.id,
@@ -30,6 +30,7 @@ def _task_public(t: SchemeReviewTask) -> ReviewTaskPublic:
         status=t.status,
         result_text=t.result_text,
         error_message=t.error_message,
+        review_log=(t.review_log if include_review_log else None),
         original_filename=t.original_filename,
         created_at=t.created_at,
         updated_at=t.updated_at,
@@ -44,12 +45,15 @@ def list_my_tasks(
 ) -> list[ReviewTaskPublic]:
     q = (
         db.query(SchemeReviewTask)
-        .options(joinedload(SchemeReviewTask.scheme_type))
+        .options(
+            joinedload(SchemeReviewTask.scheme_type),
+            defer(SchemeReviewTask.review_log),
+        )
         .filter(SchemeReviewTask.user_id == user.id)
         .order_by(SchemeReviewTask.id.desc())
     )
     rows = q.limit(min(limit, 200)).all()
-    return [_task_public(r) for r in rows]
+    return [_task_public(r, include_review_log=False) for r in rows]
 
 
 @router.get("/{task_id}", response_model=ReviewTaskPublic)
@@ -105,6 +109,7 @@ async def create_task(
         raise HTTPException(status_code=502, detail=f"存储失败: {e!s}") from e
 
     now = datetime.now(UTC)
+    ts = now.strftime("%Y-%m-%d %H:%M:%S UTC")
     row = SchemeReviewTask(
         scheme_type_id=scheme_type_id,
         user_id=user.id,
@@ -114,6 +119,7 @@ async def create_task(
         original_filename=file.filename or "scheme.docx",
         created_at=now,
         updated_at=now,
+        review_log=f"[{ts}] INFO 任务已提交，等待处理\n",
     )
     db.add(row)
     db.commit()

@@ -2,6 +2,7 @@ import {
   CloudDownloadOutlined,
   ExportOutlined,
   FileSearchOutlined,
+  FileTextOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 import {
@@ -14,6 +15,7 @@ import {
   Space,
   Table,
   Tag,
+  Typography,
   Upload,
 } from 'antd'
 import type { UploadFile } from 'antd/es/upload/interface'
@@ -42,6 +44,9 @@ export default function ReviewPage() {
   const [submitOpen, setSubmitOpen] = useState(false)
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [detail, setDetail] = useState<ReviewTask | null>(null)
+  const [logModalTaskId, setLogModalTaskId] = useState<number | null>(null)
+  const [logLoading, setLogLoading] = useState(false)
+  const [logContent, setLogContent] = useState<string | null>(null)
 
   const { data: schemes = [], isLoading: schemesLoading } = useQuery({
     queryKey: ['schemes'],
@@ -140,6 +145,22 @@ export default function ReviewPage() {
     submitMut.mutate({ sid: schemeId, file: f })
   }
 
+  const openReviewLog = async (taskId: number) => {
+    setLogModalTaskId(taskId)
+    setLogLoading(true)
+    setLogContent(null)
+    try {
+      const { data } = await api.get<ReviewTask>(`/review-tasks/${taskId}`)
+      const text = data.review_log?.trim()
+      setLogContent(text && text.length > 0 ? text : '暂无审核日志')
+    } catch {
+      message.error('加载审核日志失败')
+      setLogContent(null)
+    } finally {
+      setLogLoading(false)
+    }
+  }
+
   return (
     <div>
       <div
@@ -201,11 +222,19 @@ export default function ReviewPage() {
           {
             title: '操作',
             key: 'act',
-            width: 200,
+            width: 280,
             render: (_, row) => (
               <Space size="small" wrap>
                 <Button type="link" size="small" onClick={() => setDetail(row)}>
                   人工审阅
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FileTextOutlined />}
+                  onClick={() => void openReviewLog(row.id)}
+                >
+                  审核日志
                 </Button>
                 <Button
                   type="link"
@@ -270,6 +299,40 @@ export default function ReviewPage() {
             </Upload.Dragger>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={logModalTaskId ? `审核日志 — 任务 #${logModalTaskId}` : '审核日志'}
+        open={logModalTaskId !== null}
+        onCancel={() => {
+          setLogModalTaskId(null)
+          setLogContent(null)
+        }}
+        footer={null}
+        width={720}
+        destroyOnClose
+      >
+        {logLoading ? (
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        ) : (
+          <pre
+            style={{
+              margin: 0,
+              maxHeight: 'min(60vh, 480px)',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontSize: 12,
+              lineHeight: 1.5,
+              padding: 12,
+              background: 'var(--ant-color-fill-quaternary, rgba(0,0,0,0.04))',
+              borderRadius: 8,
+            }}
+          >
+            {logContent ?? ''}
+          </pre>
+        )}
       </Modal>
 
       <Modal

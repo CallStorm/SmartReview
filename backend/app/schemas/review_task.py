@@ -16,6 +16,10 @@ class ReviewTaskPublic(BaseModel):
     original_filename: str
     created_at: datetime
     updated_at: datetime
+    review_log: str | None = Field(
+        default=None,
+        description="审核过程日志；列表接口为减轻负载不返回，仅详情接口返回",
+    )
 
 
 class ReviewTaskCreateResponse(BaseModel):

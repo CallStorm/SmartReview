@@ -34,6 +34,7 @@ class SchemeReviewTask(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=ReviewTaskStatus.pending)
     result_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_log: Mapped[str | None] = mapped_column(Text, nullable=True)
     minio_bucket: Mapped[str] = mapped_column(String(128), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False, default="")

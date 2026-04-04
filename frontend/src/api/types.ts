@@ -128,6 +128,8 @@ export interface ReviewTask {
   status: ReviewTaskStatus
   result_text: string | null
   error_message: string | null
+  /** 列表接口不返回；详情接口返回审核过程日志 */
+  review_log?: string | null
   original_filename: string
   created_at: string
   updated_at: string
