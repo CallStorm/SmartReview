@@ -218,7 +218,7 @@ export default function TemplatesPage() {
                     }
                   }}
                 >
-                  结构
+                  规则设置
                 </Button>
                 <Button
                   size="small"
