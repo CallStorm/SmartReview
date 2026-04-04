@@ -1,5 +1,6 @@
 from app.models.basis_item import BasisItem
 from app.models.knowledge_base_settings import KnowledgeBaseSettings
+from app.models.model_provider_settings import ModelProviderSettings
 from app.models.scheme_review_task import SchemeReviewTask
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
@@ -11,5 +12,6 @@ __all__ = [
     "BasisItem",
     "SchemeTemplate",
     "KnowledgeBaseSettings",
+    "ModelProviderSettings",
     "SchemeReviewTask",
 ]

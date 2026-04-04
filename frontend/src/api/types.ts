@@ -12,6 +12,37 @@ export interface KnowledgeBaseSettings {
   api_key_configured: boolean
 }
 
+export type LlmApiProtocol = 'openai_compatible' | 'anthropic'
+
+export type ProviderId = 'volcengine' | 'minimax'
+
+export interface VolcengineSettingsPart {
+  api_protocol: 'openai_compatible'
+  base_url: string
+  endpoint_id: string
+  api_key_configured: boolean
+}
+
+export interface MinimaxSettingsPart {
+  api_protocol: 'anthropic'
+  base_url: string
+  model: string
+  api_key_configured: boolean
+}
+
+export interface ModelProviderSettings {
+  default_provider: ProviderId | null
+  volcengine: VolcengineSettingsPart
+  minimax: MinimaxSettingsPart
+}
+
+export interface ModelTestResult {
+  ok: boolean
+  preview?: string | null
+  error?: string | null
+  latency_ms?: number | null
+}
+
 export interface DifyDatasetItem {
   id: string
   name: string

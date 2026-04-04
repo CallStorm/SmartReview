@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     dify_base_url: str = ""
     dify_api_key: str = ""
 
+    # 大模型（可选；数据库「设置」优先覆盖非空字段）
+    default_llm_provider: str = ""
+    volcengine_base_url: str = ""
+    volcengine_api_key: str = ""
+    volcengine_endpoint_id: str = ""
+    minimax_base_url: str = ""
+    minimax_api_key: str = ""
+    minimax_model: str = ""
+
     @property
     def database_url(self) -> str:
         return (
