@@ -340,6 +340,23 @@ export default function TemplatesPage() {
                     value={selectedNode.review_prompt ?? ''}
                     onChange={(e) => patchSelected({ review_prompt: e.target.value })}
                   />
+                  <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
+                    上下文一致性校验
+                  </Divider>
+                  <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+                    选择需与本章节对照的节点，用于审核时检查跨章节表述是否一致、是否存在语义冲突（不选表示不做该项比对）
+                  </Typography.Paragraph>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    style={{ width: '100%' }}
+                    placeholder="选择参与一致性比对的节点"
+                    value={selectedNode.context_consistency_ref_node_ids ?? []}
+                    onChange={(ids) => patchSelected({ context_consistency_ref_node_ids: ids })}
+                    options={refSelectOptions.map((o) => ({ value: o.id, label: o.label }))}
+                    optionFilterProp="label"
+                    showSearch
+                  />
                 </div>
               )}
             </div>
