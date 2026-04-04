@@ -24,6 +24,8 @@ export default function AppLayout() {
   const loc = useLocation()
   const [collapsed, setCollapsed] = useState(false)
 
+  const isOnlyofficeEdit = /^\/review\/[^/]+\/edit$/.test(loc.pathname)
+
   const items = [
     { key: '/schemes', icon: <AppstoreOutlined />, label: '方案类型管理' },
     { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
@@ -37,7 +39,7 @@ export default function AppLayout() {
   ]
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#fafafa' }}>
+    <Layout style={{ minHeight: '100vh', background: '#fafafa', display: 'flex' }}>
       <Sider
         collapsed={collapsed}
         width={248}
@@ -148,7 +150,20 @@ export default function AppLayout() {
         </div>
       </Sider>
 
-      <Layout style={{ background: '#fafafa' }}>
+      <Layout
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: '#fafafa',
+          ...(isOnlyofficeEdit
+            ? {
+                minHeight: '100vh',
+                display: 'flex',
+                flexDirection: 'column' as const,
+              }
+            : {}),
+        }}
+      >
         <Header className="app-main-header">
           <Button
             type="default"
@@ -158,7 +173,21 @@ export default function AppLayout() {
             aria-label={collapsed ? '展开菜单' : '折叠菜单'}
           />
         </Header>
-        <Content style={{ margin: 24, minHeight: 280 }}>
+        <Content
+          style={
+            isOnlyofficeEdit
+              ? {
+                  margin: 0,
+                  padding: 0,
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }
+              : { margin: 24, minHeight: 280 }
+          }
+        >
           <Outlet />
         </Content>
       </Layout>

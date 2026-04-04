@@ -1,5 +1,5 @@
-import { RollbackOutlined } from '@ant-design/icons'
-import { Alert, Button, Spin, Typography } from 'antd'
+import { ArrowLeftOutlined } from '@ant-design/icons'
+import { Alert, Button, Spin, Tooltip, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
@@ -130,48 +130,90 @@ export default function ReviewEditPlaceholderPage() {
     ? (ooError.response?.data as { detail?: string } | undefined)?.detail
     : undefined
 
-  return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
-      <Button
-        icon={<RollbackOutlined />}
-        onClick={() => navigate(`/review/${taskId}/manual`)}
-        style={{ marginBottom: 16, alignSelf: 'flex-start' }}
-      >
-        返回审阅
-      </Button>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        在线编辑（OnlyOffice）
-      </Typography.Title>
+  const backTarget = `/review/${taskId}/manual`
 
-      {taskLoading ? (
-        <Spin style={{ marginTop: 48 }} />
-      ) : !canEdit ? (
-        <Alert
-          type="info"
-          showIcon
-          message="暂无可编辑文档"
-          description="任务尚未生成带批注的结果 Word，请待审核完成后再试。"
-        />
-      ) : ooLoading ? (
-        <Spin tip="正在准备编辑器…" style={{ marginTop: 48 }} />
-      ) : ooError ? (
-        <Alert
-          type="error"
-          showIcon
-          message="无法启动编辑器"
-          description={
-            axDetail ||
-            (ooError instanceof Error ? ooError.message : '请检查系统设置中的 OnlyOffice 配置')
-          }
-        />
-      ) : bootError ? (
-        <Alert type="error" showIcon message={bootError} />
-      ) : (
-        <div
-          id={EDITOR_DIV_ID}
-          style={{ flex: 1, minHeight: 480, border: '1px solid var(--ant-color-border-secondary)' }}
-        />
-      )}
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'stretch',
+        overflow: 'hidden',
+        background: '#fff',
+      }}
+    >
+      <aside
+        style={{
+          width: 48,
+          flexShrink: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          paddingTop: 10,
+          borderRight: '1px solid var(--ant-color-border-secondary)',
+          background: '#fafafa',
+        }}
+      >
+        <Tooltip title="返回审阅">
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate(backTarget)}
+            aria-label="返回审阅"
+            className="app-collapse-btn"
+            style={{ width: 40, height: 40 }}
+          />
+        </Tooltip>
+      </aside>
+
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {taskLoading ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spin />
+          </div>
+        ) : !canEdit ? (
+          <div style={{ padding: 24, overflow: 'auto' }}>
+            <Alert
+              type="info"
+              showIcon
+              message="暂无可编辑文档"
+              description="任务尚未生成带批注的结果 Word，请待审核完成后再试。"
+            />
+          </div>
+        ) : ooLoading ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spin tip="正在准备编辑器…" />
+          </div>
+        ) : ooError ? (
+          <div style={{ padding: 24, overflow: 'auto' }}>
+            <Alert
+              type="error"
+              showIcon
+              message="无法启动编辑器"
+              description={
+                axDetail ||
+                (ooError instanceof Error ? ooError.message : '请检查系统设置中的 OnlyOffice 配置')
+              }
+            />
+          </div>
+        ) : bootError ? (
+          <div style={{ padding: 24, overflow: 'auto' }}>
+            <Alert type="error" showIcon message={bootError} />
+          </div>
+        ) : (
+          <div id={EDITOR_DIV_ID} style={{ flex: 1, minHeight: 0, minWidth: 0 }} />
+        )}
+      </div>
     </div>
   )
 }

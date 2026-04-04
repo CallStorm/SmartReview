@@ -122,6 +122,11 @@ def build_editor_config(
             "mode": "edit",
             "lang": eff.editor_lang,
             "user": {"id": str(user.id), "name": user.username or f"user-{user.id}"},
+            "customization": {
+                "compactToolbar": True,
+                "compactHeader": True,
+                "toolbarHideFileName": True,
+            },
         },
         "permissions": {
             "edit": True,
