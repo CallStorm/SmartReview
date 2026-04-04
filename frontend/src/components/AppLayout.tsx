@@ -15,11 +15,10 @@ import { Avatar, Button, Layout, Menu } from 'antd'
 import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { BRAND_LOGO_SRC } from '../config/brand'
+import { resolvePageTitle } from '../utils/pageTitle'
 
 const { Header, Sider, Content } = Layout
-
-/** 静态资源来自 `frontend/public/brand-logo.png`（由陕建数科 logo 素材同步） */
-const SIDEBAR_LOGO_SRC = `${import.meta.env.BASE_URL}brand-logo.png`
 
 export default function AppLayout() {
   const { user, logout } = useAuth()
@@ -28,6 +27,9 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
 
   const isOnlyofficeEdit = /^\/review\/[^/]+\/edit$/.test(loc.pathname)
+  const isManualReview = /^\/review\/[^/]+\/manual$/.test(loc.pathname)
+  const isReviewFullBleed = isOnlyofficeEdit || isManualReview
+  const pageTitle = resolvePageTitle(loc.pathname)
 
   const items = [
     { key: '/schemes', icon: <AppstoreOutlined />, label: '方案类型管理' },
@@ -42,7 +44,14 @@ export default function AppLayout() {
   ]
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#fafafa', display: 'flex' }}>
+    <Layout
+      style={{
+        minHeight: '100vh',
+        ...(isOnlyofficeEdit ? { height: '100vh', overflow: 'hidden' } : {}),
+        background: '#fafafa',
+        display: 'flex',
+      }}
+    >
       <Sider
         collapsed={collapsed}
         width={248}
@@ -64,7 +73,7 @@ export default function AppLayout() {
             <div className="app-sider-logo-clip">
               <img
                 className="app-sider-logo"
-                src={SIDEBAR_LOGO_SRC}
+                src={BRAND_LOGO_SRC}
                 alt="陕建数科"
                 draggable={false}
               />
@@ -161,41 +170,55 @@ export default function AppLayout() {
         style={{
           flex: 1,
           minWidth: 0,
+          minHeight: 0,
           background: '#fafafa',
-          ...(isOnlyofficeEdit
+          ...(isReviewFullBleed
             ? {
-                minHeight: '100vh',
                 display: 'flex',
                 flexDirection: 'column' as const,
+                overflow: 'hidden',
               }
             : {}),
         }}
       >
         <Header className="app-main-header">
-          <Button
-            type="default"
-            className="app-collapse-btn"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={collapsed ? '展开菜单' : '折叠菜单'}
-          />
+          <div className="app-main-header__left">
+            <Button
+              type="default"
+              className="app-collapse-btn"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? '展开菜单' : '折叠菜单'}
+            />
+            <h1 className="app-main-header__title">{pageTitle}</h1>
+          </div>
+          <span className="app-main-header__meta" aria-hidden>
+            v1.0
+          </span>
         </Header>
         <Content
-          style={
-            isOnlyofficeEdit
-              ? {
-                  margin: 0,
-                  padding: 0,
-                  flex: 1,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }
-              : { margin: 24, minHeight: 280 }
-          }
+          className="app-content app-content--main"
+          style={{
+            margin: 0,
+            padding: 0,
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
         >
-          <Outlet />
+          <div
+            className={
+              isOnlyofficeEdit
+                ? 'app-outlet app-outlet--fill app-outlet--flush'
+                : isManualReview
+                  ? 'app-outlet app-outlet--fill'
+                  : 'app-outlet app-outlet--scroll'
+            }
+          >
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>

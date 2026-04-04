@@ -1,3 +1,4 @@
+import { FileTextOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
@@ -14,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { BasisItem, SchemeType } from '../api/types'
+import PageShell from '../components/PageShell'
 
 /** 文献类型（前端内置，与后端存字符串一致） */
 const DOC_TYPE_OPTIONS = [
@@ -116,8 +118,10 @@ export default function BasisPage() {
   })
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16 }}>
+    <PageShell
+      icon={<FileTextOutlined />}
+      description="维护国标、行标及方案关联的编制依据条目，供智能审核引用。"
+      extra={
         <Button
           type="primary"
           onClick={() => {
@@ -128,12 +132,15 @@ export default function BasisPage() {
         >
           新建编制依据
         </Button>
-      </Space>
+      }
+    >
       <Table
         rowKey="id"
+        size="middle"
         loading={isLoading}
         scroll={{ x: 1200 }}
         dataSource={data}
+        locale={{ emptyText: '暂无编制依据' }}
         columns={[
           { title: '文献类型', dataIndex: 'doc_type', width: 120 },
           { title: '标准号', dataIndex: 'standard_no', width: 140 },
@@ -256,6 +263,6 @@ export default function BasisPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageShell>
   )
 }

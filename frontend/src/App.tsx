@@ -16,8 +16,9 @@ function RequireAuth({ children }: { children: ReactElement }) {
   const { user, loading, token } = useAuth()
   if (loading) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
-        <Spin />
+      <div className="app-auth-loading" role="status" aria-live="polite">
+        <Spin size="large" />
+        <p className="app-auth-loading__hint">正在验证登录状态…</p>
       </div>
     )
   }
@@ -31,8 +32,9 @@ function RequireAdmin({ children }: { children: ReactElement }) {
   const { user, loading } = useAuth()
   if (loading) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
-        <Spin />
+      <div className="app-auth-loading" role="status" aria-live="polite">
+        <Spin size="large" />
+        <p className="app-auth-loading__hint">正在验证登录状态…</p>
       </div>
     )
   }
@@ -51,8 +53,9 @@ function AppRoutes() {
         path="/login"
         element={
           loading ? (
-            <div style={{ padding: 48, textAlign: 'center' }}>
-              <Spin />
+            <div className="app-auth-loading" role="status" aria-live="polite">
+              <Spin size="large" />
+              <p className="app-auth-loading__hint">加载中…</p>
             </div>
           ) : token && user ? (
             <Navigate to="/schemes" replace />

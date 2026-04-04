@@ -1,3 +1,4 @@
+import { FormOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
@@ -18,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic } from '../api/types'
+import PageShell from '../components/PageShell'
 import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
 import {
   cloneTemplateStructure,
@@ -159,12 +161,17 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div>
+    <PageShell
+      icon={<FormOutlined />}
+      description="按方案类型上传 Word 模版、配置标题树规则与审核工作流。"
+    >
       <Table
         rowKey="id"
+        size="middle"
         loading={isLoading}
         dataSource={schemes}
         scroll={{ x: 'max-content' }}
+        locale={{ emptyText: '暂无方案类型' }}
         columns={[
           { title: '方案ID', dataIndex: 'id', width: 72 },
           {
@@ -454,6 +461,6 @@ export default function TemplatesPage() {
           <p>点击或拖拽 .docx 到此上传</p>
         </Upload.Dragger>
       </Modal>
-    </div>
+    </PageShell>
   )
 }

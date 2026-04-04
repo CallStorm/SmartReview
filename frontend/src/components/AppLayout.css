@@ -95,10 +95,73 @@
 .app-main-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding-inline: 16px 24px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;
   min-height: 56px;
+}
+
+.app-main-header__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-main-header__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-main-header__meta {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 顶栏下方主区域：无外边距，由子层负责滚动或撑满 */
+.app-content--main {
+  background: #fafafa;
+}
+
+.app-outlet {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 20px 20px;
+  background: #fafafa;
+}
+
+.app-outlet--scroll {
+  overflow: auto;
+}
+
+/* 文档编辑 / 人工审阅：内部自行处理滚动与高度 */
+.app-outlet--fill {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* OnlyOffice 文档编辑：与主区内边距拉满，便于 iframe 纵向占满 */
+.app-outlet--flush {
+  padding: 0;
 }
 
 .app-collapse-btn.ant-btn {

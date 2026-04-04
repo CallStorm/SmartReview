@@ -28,6 +28,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReviewTask, SchemeType } from '../api/types'
+import PageShell from '../components/PageShell'
 
 const statusLabel: Record<string, string> = {
   pending: '排队中',
@@ -235,14 +236,10 @@ export default function ReviewPage() {
 
   return (
     <div className="review-page">
-      <div className="review-page__toolbar">
-        <div className="review-page__title-row">
-          <div className="review-page__title-inner">
-            <FileSearchOutlined style={{ fontSize: 22, color: '#1677ff' }} />
-            <span style={{ fontSize: 18, fontWeight: 600 }}>方案审核</span>
-          </div>
-        </div>
-
+      <PageShell
+        icon={<FileSearchOutlined />}
+        description="选择方案类型并上传 Word（.docx）发起智能审核；完成后可人工审阅、查看日志或导出带批注文档。"
+      >
         <div className="review-page__stats">
           <div className="review-page__stat-card">
             <FileSearchOutlined className="review-page__stat-icon" aria-hidden />
@@ -295,13 +292,14 @@ export default function ReviewPage() {
             </Button>
           </Space>
         </div>
-      </div>
 
-      <div className="review-page__table-wrap">
+        <div className="review-page__table-wrap">
         <Table<ReviewTask>
           rowKey="id"
+          size="middle"
           loading={tasksLoading}
           dataSource={tasks}
+          locale={{ emptyText: '暂无审核任务' }}
           pagination={{ pageSize: 15, showSizeChanger: true }}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 72 },
@@ -365,7 +363,8 @@ export default function ReviewPage() {
             },
           ]}
         />
-      </div>
+        </div>
+      </PageShell>
 
       <Modal
         title="提交方案审核"

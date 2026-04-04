@@ -1,9 +1,11 @@
+import { AppstoreOutlined } from '@ant-design/icons'
 import { App as AntApp, Button, Form, Input, Modal, Popconfirm, Space, Table } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api/client'
 import type { SchemeType } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import PageShell from '../components/PageShell'
 
 export default function SchemesPage() {
   const qc = useQueryClient()
@@ -57,9 +59,11 @@ export default function SchemesPage() {
   })
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16 }}>
-        {isAdmin && (
+    <PageShell
+      icon={<AppstoreOutlined />}
+      description="维护施工方案大类与名称，供审核任务与 Word 模版绑定使用。"
+      extra={
+        isAdmin ? (
           <Button
             type="primary"
             onClick={() => {
@@ -70,12 +74,15 @@ export default function SchemesPage() {
           >
             新建方案类型
           </Button>
-        )}
-      </Space>
+        ) : undefined
+      }
+    >
       <Table
         rowKey="id"
+        size="middle"
         loading={isLoading}
         dataSource={data}
+        locale={{ emptyText: '暂无方案类型' }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 72 },
           { title: '方案大类', dataIndex: 'category' },
@@ -147,6 +154,6 @@ export default function SchemesPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageShell>
   )
 }

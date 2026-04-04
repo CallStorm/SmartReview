@@ -98,7 +98,17 @@ export default function ManualReviewPage() {
 
   if (isLoading || !task) {
     return (
-      <div style={{ padding: 48, textAlign: 'center' }}>
+      <div
+        style={{
+          height: '100%',
+          minHeight: 0,
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#fff',
+        }}
+      >
         <Spin />
       </div>
     )
@@ -107,15 +117,27 @@ export default function ManualReviewPage() {
   const activeStep = steps[Math.min(selectedIdx, Math.max(0, steps.length - 1))]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 120px)' }}>
+    <div
+      style={{
+        height: '100%',
+        minHeight: 0,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: '#fff',
+      }}
+    >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 16,
+          flexShrink: 0,
           flexWrap: 'wrap',
           gap: 12,
+          padding: '10px 16px',
+          borderBottom: '1px solid #f0f0f0',
         }}
       >
         <Space>
@@ -148,13 +170,15 @@ export default function ManualReviewPage() {
         </Space>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0 }}>
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            paddingTop: 8,
+            flexShrink: 0,
+            padding: '12px 10px 12px 12px',
+            borderRight: '1px solid #f0f0f0',
           }}
         >
           {steps.length === 0 ? (
@@ -205,7 +229,19 @@ export default function ManualReviewPage() {
           )}
         </div>
 
-        <Card style={{ flex: 1, overflow: 'auto' }} title="审核详情">
+        <Card
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: 0,
+            border: 'none',
+            boxShadow: 'none',
+          }}
+          styles={{ body: { flex: 1, overflow: 'auto', padding: 16 } }}
+          title="审核详情"
+        >
           {task.error_message && task.status === 'failed' ? (
             <Typography.Paragraph type="danger" style={{ marginBottom: 16 }}>
               {task.error_message}

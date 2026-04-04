@@ -1,29 +1,8 @@
-.review-page__toolbar {
-  margin: -4px -4px 20px;
-  padding: 4px 4px 20px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.review-page__title-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.review-page__title-inner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .review-page__stats {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  margin: 0 0 16px;
 }
 
 .review-page__stat-card {

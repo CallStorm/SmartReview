@@ -1,3 +1,4 @@
+import { SettingOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
@@ -15,6 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { api } from '../api/client'
+import PageShell from '../components/PageShell'
 import type {
   KnowledgeBaseSettings,
   ModelProviderSettings,
@@ -507,18 +509,19 @@ export default function SettingsPage() {
   )
 
   return (
-    <div style={{ maxWidth: 1040 }}>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
-        设置
-      </Typography.Title>
-
-      <Tabs
-        items={[
-          { key: 'kb', label: '知识库', children: knowledgeTab },
-          { key: 'model', label: '模型配置', children: modelTab },
-          { key: 'onlyoffice', label: 'OnlyOffice', children: onlyofficeTab },
-        ]}
-      />
-    </div>
+    <PageShell
+      icon={<SettingOutlined />}
+      description="配置知识库（Dify）、大模型供应商与 OnlyOffice 文档服务，密钥仅保存在服务端。"
+    >
+      <div style={{ maxWidth: 1040 }}>
+        <Tabs
+          items={[
+            { key: 'kb', label: '知识库', children: knowledgeTab },
+            { key: 'model', label: '模型配置', children: modelTab },
+            { key: 'onlyoffice', label: 'OnlyOffice', children: onlyofficeTab },
+          ]}
+        />
+      </div>
+    </PageShell>
   )
 }
