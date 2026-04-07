@@ -1,46 +1,45 @@
-/* 登录卡片参考开放平台：白底、顶栏 logo|系统名、密码登录标签线、胶囊输入、深色主按钮 */
+/* 登录页：居中卡片 + 浅色施工图风格底纹（网格 / 斜线） */
 .login-page {
   position: relative;
   min-height: 100vh;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
-  padding: 0;
+  padding: 24px 20px;
   font-family: var(--app-font-family);
-  background-color: #ffffff;
+  /* 中性浅灰底 + 示弱网格，类似蓝图 / 场地线稿 */
+  background-color: #e9edf4;
+  background-image:
+    linear-gradient(rgba(80, 100, 130, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(80, 100, 130, 0.07) 1px, transparent 1px),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 14px,
+      rgba(80, 100, 130, 0.04) 14px,
+      rgba(80, 100, 130, 0.04) 15px
+    );
+  background-size: 56px 56px, 56px 56px, auto;
+  background-position: 0 0, 0 0, 0 0;
 }
 
 .login-page__shell {
   display: flex;
   width: 100%;
-  max-width: none;
-  min-height: 100vh;
+  max-width: 440px;
   margin: 0 auto;
-  align-items: stretch;
-}
-
-.login-page__brand {
-  display: none;
-  flex: 1 1 50%;
-  min-width: 0;
-  min-height: 100vh;
-  position: relative;
-  padding: 0;
-  background-color: #ffffff;
-  background-repeat: no-repeat;
-  background-position: center;
-  /* 略小于铺满，留出底色边距 */
-  background-size: 82% auto;
+  align-items: center;
+  justify-content: center;
 }
 
 .login-page__form-column {
-  flex: 1 1 50%;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px 40px;
+  padding: 0;
   min-width: 0;
-  background: #ffffff;
+  background: transparent;
 }
 
 .login-page__form-stack {
@@ -49,17 +48,18 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  transform: translateY(30px);
 }
 
 .login-page__card {
   position: relative;
   width: 100%;
   background: #ffffff;
-  border-radius: 0;
-  padding: 8px 0 0;
-  border: none;
-  box-shadow: none;
+  border-radius: 16px;
+  padding: 28px 28px 32px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 40px rgba(15, 23, 42, 0.08);
 }
 
 .login-page__masthead {
@@ -214,31 +214,14 @@
   font-weight: 600 !important;
 }
 
-@media (min-width: 900px) {
-  .login-page__brand {
-    display: block;
-  }
-}
-
 @media (max-width: 899px) {
-  .login-page__shell {
-    flex-direction: column;
-    max-width: none;
-    min-height: 100vh;
+  .login-page {
+    padding: 20px 16px;
   }
 
-  .login-page__brand {
-    display: block;
-    flex: 0 0 auto;
-    width: 100%;
-    min-height: 200px;
-    max-height: min(36vh, 280px);
-    background-size: auto 70%;
-  }
-
-  .login-page__form-column {
-    flex: 1;
-    padding: 24px 20px 32px;
+  .login-page__card {
+    padding: 24px 22px 28px;
+    border-radius: 14px;
   }
 
   .login-page__masthead-name {

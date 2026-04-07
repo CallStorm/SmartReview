@@ -7,9 +7,6 @@ import { useAuth } from '../auth/AuthContext'
 import { BRAND_LOGO_SRC } from '../config/brand'
 import { formatApiErrorMessage } from '../utils/apiError'
 
-/** 登录页左侧整幅背景，文件置于 `frontend/public/home.png` */
-const LOGIN_HOME_BG = `${import.meta.env.BASE_URL}home.png`
-
 const SYSTEM_NAME = '方案智能审核'
 
 export default function LoginPage() {
@@ -21,12 +18,6 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-page__shell">
-        <div
-          className="login-page__brand"
-          aria-hidden
-          style={{ backgroundImage: `url(${LOGIN_HOME_BG})` }}
-        />
-
         <div className="login-page__form-column">
           <div className="login-page__form-stack">
             <div className="login-page__card">
