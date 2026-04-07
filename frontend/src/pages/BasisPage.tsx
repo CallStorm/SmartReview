@@ -80,7 +80,18 @@ export default function BasisPage() {
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<BasisItem | null>(null)
+  const [keyword, setKeyword] = useState('')
   const [form] = Form.useForm()
+
+  const filteredData = useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase()
+    if (!normalizedKeyword) return data
+    return data.filter((item) => {
+      const standardNo = item.standard_no?.toLowerCase() ?? ''
+      const docName = item.doc_name?.toLowerCase() ?? ''
+      return standardNo.includes(normalizedKeyword) || docName.includes(normalizedKeyword)
+    })
+  }, [data, keyword])
 
   const saveMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) => {
@@ -120,18 +131,27 @@ export default function BasisPage() {
   return (
     <PageShell
       icon={<FileTextOutlined />}
-      description="维护国标、行标及方案关联的编制依据条目，供智能审核引用。"
+      description=""
       extra={
-        <Button
-          type="primary"
-          onClick={() => {
-            setEditing(null)
-            form.resetFields()
-            setOpen(true)
-          }}
-        >
-          新建编制依据
-        </Button>
+        <Space>
+          <Input
+            allowClear
+            placeholder="按标准号或文献名称过滤"
+            style={{ width: 260 }}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <Button
+            type="primary"
+            onClick={() => {
+              setEditing(null)
+              form.resetFields()
+              setOpen(true)
+            }}
+          >
+            新建编制依据
+          </Button>
+        </Space>
       }
     >
       <Table
@@ -139,7 +159,7 @@ export default function BasisPage() {
         size="middle"
         loading={isLoading}
         scroll={{ x: 1200 }}
-        dataSource={data}
+        dataSource={filteredData}
         locale={{ emptyText: '暂无编制依据' }}
         columns={[
           { title: '文献类型', dataIndex: 'doc_type', width: 120 },
