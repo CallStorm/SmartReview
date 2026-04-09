@@ -122,6 +122,7 @@ def get_output_download_url(
 @router.get("/{task_id}/onlyoffice/editor-config", response_model=OnlyofficeEditorConfigResponse)
 def get_onlyoffice_editor_config(
     task_id: int,
+    mode: str = Query("edit", description="edit：可编辑；view：仅预览（人工审阅左侧对照）"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> OnlyofficeEditorConfigResponse:
@@ -137,12 +138,18 @@ def get_onlyoffice_editor_config(
         raise HTTPException(status_code=403, detail="无权编辑该任务文档")
     if not (t.output_object_key or "").strip():
         raise HTTPException(status_code=404, detail="暂无带批注的文档（任务未完成或结构审核未通过）")
+    normalized_mode = (mode or "edit").strip().lower()
+    if normalized_mode not in ("edit", "view"):
+        raise HTTPException(status_code=400, detail="mode 必须为 edit 或 view")
+    view_only = normalized_mode == "view"
     try:
         eff = assert_onlyoffice_ready(db)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     file_token = make_file_access_token(t.id)
-    config = build_editor_config(task=t, user=user, eff=eff, file_token=file_token)
+    config = build_editor_config(
+        task=t, user=user, eff=eff, file_token=file_token, view_only=view_only
+    )
     oo_token = make_editor_token(config, eff.jwt_secret)
     docs_url = eff.docs_url.rstrip("/")
     return OnlyofficeEditorConfigResponse(docs_url=docs_url, config=config, token=oo_token)

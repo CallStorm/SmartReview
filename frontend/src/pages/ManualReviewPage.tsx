@@ -2,6 +2,7 @@ import {
   ArrowDownOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   RollbackOutlined,
 } from '@ant-design/icons'
 import {
@@ -152,6 +153,13 @@ export default function ManualReviewPage() {
           </Typography.Text>
         </Space>
         <Space>
+          <Button
+            icon={<EyeOutlined />}
+            disabled={!canExport}
+            onClick={() => navigate(`/review/${task.id}/preview`)}
+          >
+            预览
+          </Button>
           <Button
             icon={<EditOutlined />}
             disabled={!canExport}

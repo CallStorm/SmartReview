@@ -40,7 +40,7 @@ export default function AppLayout() {
   const loc = useLocation()
   const [collapsed, setCollapsed] = useState(false)
 
-  const isOnlyofficeEdit = /^\/review\/[^/]+\/edit$/.test(loc.pathname)
+  const isOnlyofficeEdit = /^\/review\/[^/]+\/(edit|preview)$/.test(loc.pathname)
   const isManualReview = /^\/review\/[^/]+\/manual$/.test(loc.pathname)
   const pageTitle = resolvePageTitle(loc.pathname)
 

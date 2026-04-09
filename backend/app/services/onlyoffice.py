@@ -102,6 +102,7 @@ def build_editor_config(
     user: User,
     eff: EffectiveOnlyoffice,
     file_token: str,
+    view_only: bool = False,
 ) -> dict[str, Any]:
     public_base = resolve_onlyoffice_public_base_url(eff.callback_base_url)
     file_url = (
@@ -109,6 +110,18 @@ def build_editor_config(
         f"?token={quote(file_token, safe='')}"
     )
     title = (task.original_filename or "document.docx").strip() or "document.docx"
+    editor_cfg: dict[str, Any] = {
+        "mode": "view" if view_only else "edit",
+        "lang": eff.editor_lang,
+        "user": {"id": str(user.id), "name": user.username or f"user-{user.id}"},
+        "customization": {
+            "compactToolbar": True,
+            "compactHeader": True,
+            "toolbarHideFileName": True,
+        },
+    }
+    if not view_only:
+        editor_cfg["callbackUrl"] = f"{public_base}/onlyoffice/callback?task_id={task.id}"
     return {
         "document": {
             "fileType": "docx",
@@ -117,21 +130,11 @@ def build_editor_config(
             "url": file_url,
         },
         "documentType": "word",
-        "editorConfig": {
-            "callbackUrl": f"{public_base}/onlyoffice/callback?task_id={task.id}",
-            "mode": "edit",
-            "lang": eff.editor_lang,
-            "user": {"id": str(user.id), "name": user.username or f"user-{user.id}"},
-            "customization": {
-                "compactToolbar": True,
-                "compactHeader": True,
-                "toolbarHideFileName": True,
-            },
-        },
+        "editorConfig": editor_cfg,
         "permissions": {
-            "edit": True,
-            "comment": True,
-            "review": True,
+            "edit": not view_only,
+            "comment": not view_only,
+            "review": not view_only,
             "download": True,
             "print": True,
         },

@@ -95,6 +95,7 @@ function AppRoutes() {
         <Route path="review" element={<ReviewPage />} />
         <Route path="review/:taskId/manual" element={<ManualReviewPage />} />
         <Route path="review/:taskId/edit" element={<ReviewEditPlaceholderPage />} />
+        <Route path="review/:taskId/preview" element={<ReviewEditPlaceholderPage />} />
         <Route
           path="basis"
           element={

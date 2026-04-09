@@ -3,7 +3,7 @@ import { Alert, Button, Spin, Tooltip, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { OnlyofficeEditorConfigResponse, ReviewTask } from '../api/types'
 
@@ -47,6 +47,8 @@ function loadOnlyofficeScript(docsUrl: string): Promise<void> {
 export default function ReviewEditPlaceholderPage() {
   const { taskId } = useParams<{ taskId: string }>()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const viewOnly = /\/preview$/.test(pathname)
   const id = Number(taskId)
   const editorRef = useRef<{ destroyEditor: () => void } | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
@@ -67,10 +69,11 @@ export default function ReviewEditPlaceholderPage() {
     isLoading: ooLoading,
     error: ooError,
   } = useQuery({
-    queryKey: ['onlyoffice-editor-config', id],
+    queryKey: ['onlyoffice-editor-config', id, viewOnly],
     queryFn: async () => {
       const { data } = await api.get<OnlyofficeEditorConfigResponse>(
         `/review-tasks/${id}/onlyoffice/editor-config`,
+        { params: { mode: viewOnly ? 'view' : 'edit' } },
       )
       return data
     },
@@ -192,7 +195,7 @@ export default function ReviewEditPlaceholderPage() {
           </div>
         ) : ooLoading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Spin tip="正在准备编辑器…" />
+            <Spin tip={viewOnly ? '正在准备预览…' : '正在准备编辑器…'} />
           </div>
         ) : ooError ? (
           <div style={{ padding: 24, overflow: 'auto' }}>
