@@ -21,6 +21,7 @@ import { api } from '../api/client'
 import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic } from '../api/types'
 import PageShell from '../components/PageShell'
 import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
+import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 import {
   cloneTemplateStructure,
   findNodeById,
@@ -172,6 +173,7 @@ export default function TemplatesPage() {
         dataSource={schemes}
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: '暂无方案类型' }}
+        pagination={DEFAULT_TABLE_PAGINATION}
         columns={[
           { title: '方案ID', dataIndex: 'id', width: 72 },
           {

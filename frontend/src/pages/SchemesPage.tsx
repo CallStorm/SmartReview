@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import type { SchemeType } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
+import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 
 export default function SchemesPage() {
   const qc = useQueryClient()
@@ -83,6 +84,7 @@ export default function SchemesPage() {
         loading={isLoading}
         dataSource={data}
         locale={{ emptyText: '暂无方案类型' }}
+        pagination={DEFAULT_TABLE_PAGINATION}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 72 },
           { title: '方案大类', dataIndex: 'category' },

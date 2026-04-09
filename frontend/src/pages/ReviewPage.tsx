@@ -29,6 +29,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReviewTask, SchemeType } from '../api/types'
 import PageShell from '../components/PageShell'
+import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 
 const statusLabel: Record<string, string> = {
   pending: '排队中',
@@ -300,7 +301,7 @@ export default function ReviewPage() {
           loading={tasksLoading}
           dataSource={tasks}
           locale={{ emptyText: '暂无审核任务' }}
-          pagination={{ pageSize: 15, showSizeChanger: true }}
+          pagination={DEFAULT_TABLE_PAGINATION}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 72 },
             {

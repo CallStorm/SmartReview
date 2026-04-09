@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConfigProvider, theme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
+import paginationZhCN from '@rc-component/pagination/es/locale/zh_CN'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -14,6 +15,10 @@ const appFontFamily =
 
 const appLocale = {
   ...zhCN,
+  Pagination: {
+    ...zhCN.Pagination,
+    ...paginationZhCN,
+  },
   Table: {
     ...zhCN.Table,
     emptyText: '暂无数据',

@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { BasisItem, SchemeType } from '../api/types'
 import PageShell from '../components/PageShell'
+import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 
 /** 文献类型（前端内置，与后端存字符串一致） */
 const DOC_TYPE_OPTIONS = [
@@ -161,6 +162,7 @@ export default function BasisPage() {
         scroll={{ x: 1200 }}
         dataSource={filteredData}
         locale={{ emptyText: '暂无编制依据' }}
+        pagination={DEFAULT_TABLE_PAGINATION}
         columns={[
           { title: '文献类型', dataIndex: 'doc_type', width: 120 },
           { title: '标准号', dataIndex: 'standard_no', width: 140 },
