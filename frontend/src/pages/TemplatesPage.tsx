@@ -44,6 +44,15 @@ function nodesToTreeData(nodes: TemplateNode[]): DataNode[] {
   }))
 }
 
+function buildTemplateFileName(schemeName: string): string {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const safeSchemeName = (schemeName || '模板').replace(/[\\/:*?"<>|]/g, '_').trim() || '模板'
+  return `${safeSchemeName}_${yyyy}${mm}${dd}.docx`
+}
+
 export default function TemplatesPage() {
   const qc = useQueryClient()
   const { message } = AntApp.useApp()
@@ -257,9 +266,18 @@ export default function TemplatesPage() {
                       const { data } = await api.get<{ url: string }>(
                         `/scheme-types/${row.id}/template/download-url`,
                       )
-                      window.open(data.url, '_blank', 'noopener,noreferrer')
+                      const res = await fetch(data.url)
+                      if (!res.ok) throw new Error('download failed')
+                      const blob = await res.blob()
+                      const a = document.createElement('a')
+                      a.href = URL.createObjectURL(blob)
+                      a.download = buildTemplateFileName(row.name)
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                      URL.revokeObjectURL(a.href)
                     } catch {
-                      message.warning('无法获取下载链接')
+                      message.warning('下载失败，请稍后重试')
                     }
                   }}
                 >
