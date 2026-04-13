@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReportStep, ReviewReportV1, ReviewTask } from '../api/types'
+import StructureReviewDetail from '../components/StructureReviewDetail'
 
 const STEP_LABELS: Record<string, string> = {
   structure: '结构审核',
@@ -141,16 +142,31 @@ export default function ManualReviewPage() {
           borderBottom: '1px solid #f0f0f0',
         }}
       >
-        <Space>
+        <Space align="start" size={12} wrap>
           <Button icon={<RollbackOutlined />} onClick={() => navigate('/review')}>
             返回
           </Button>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            人工审阅 — 任务 #{task.id}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {task.scheme_category} / {task.scheme_name}
-          </Typography.Text>
+          <div style={{ minWidth: 0 }}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {activeStep?.step_id === 'structure'
+                ? `人工审阅 · ${STEP_LABELS.structure}`
+                : `人工审阅 — 任务 #${task.id}`}
+            </Typography.Title>
+            <Typography.Text
+              type="secondary"
+              style={{ display: 'block', fontSize: 13, marginTop: 2 }}
+            >
+              方案审核 / {task.original_filename?.trim() || '未命名文档'} /{' '}
+              {activeStep
+                ? STEP_LABELS[activeStep.step_id] ?? activeStep.step_id
+                : '—'}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              {activeStep?.step_id === 'structure'
+                ? `任务 #${task.id} · ${task.scheme_category} / ${task.scheme_name}`
+                : `${task.scheme_category} / ${task.scheme_name}`}
+            </Typography.Text>
+          </div>
         </Space>
         <Space>
           <Button
@@ -259,6 +275,12 @@ export default function ManualReviewPage() {
             <Typography.Paragraph type="secondary">
               等待任务完成或报告生成…
             </Typography.Paragraph>
+          ) : activeStep.step_id === 'structure' ? (
+            <StructureReviewDetail
+              task={task}
+              step={activeStep}
+              onNavigateEdit={() => navigate(`/review/${task.id}/edit`)}
+            />
           ) : (
             <>
               <Space style={{ marginBottom: 12 }}>

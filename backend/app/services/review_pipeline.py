@@ -7,7 +7,7 @@ import traceback
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -57,25 +57,60 @@ def _append_log(db: Session, task: SchemeReviewTask, level: str, message: str) -
 
 def _structure_issues_to_report(structure_raw: list[dict[str, Any]]) -> ReportStep:
     issues: list[ReportIssue] = []
+    by_kind: dict[str, int] = {"missing_section": 0, "order_mismatch": 0, "extra_section": 0}
     for raw in structure_raw:
+        kind = str(raw.get("kind") or "")
+        if kind in by_kind:
+            by_kind[kind] += 1
         tp = raw.get("title_path") or []
+        if not isinstance(tp, list):
+            tp = []
         hpi = raw.get("heading_para_index")
-        anchor: dict[str, Any] = {"title_path": tp, "template_node_id": raw.get("template_node_id")}
+        tid = raw.get("template_node_id")
+        anchor: dict[str, Any] = {"title_path": tp}
+        if tid is not None and str(tid).strip():
+            anchor["template_node_id"] = tid
+        ut = raw.get("user_title")
+        if ut is not None and str(ut).strip():
+            anchor["user_title"] = str(ut).strip()
         if isinstance(hpi, int):
             anchor["heading_para_index"] = hpi
+        if kind == "missing_section":
+            sev: Literal["error", "warning", "info"] = "error"
+        elif kind in ("order_mismatch", "extra_section"):
+            sev = "warning"
+        else:
+            sev = "error"
         issues.append(
             ReportIssue(
-                severity="error",
+                severity=sev,
                 message=str(raw.get("message") or ""),
                 evidence="",
                 anchor=anchor,
-                related={"kind": str(raw.get("kind") or "")},
+                related={"kind": kind},
             )
         )
+    n_miss = by_kind["missing_section"]
+    n_ord = by_kind["order_mismatch"]
+    n_extra = by_kind["extra_section"]
+    if not issues:
+        summary = "结构审核通过"
+    else:
+        parts = [f"共 {len(issues)} 项结构问题"]
+        detail_bits: list[str] = []
+        if n_miss:
+            detail_bits.append(f"缺失 {n_miss}")
+        if n_ord:
+            detail_bits.append(f"顺序 {n_ord}")
+        if n_extra:
+            detail_bits.append(f"多余 {n_extra}")
+        if detail_bits:
+            parts.append("（" + "，".join(detail_bits) + "）")
+        summary = "".join(parts)
     return ReportStep(
         step_id="structure",
         passed=len(issues) == 0,
-        summary="结构审核通过" if not issues else "文档章节结构与模版不一致",
+        summary=summary,
         issues=issues,
     )
 
