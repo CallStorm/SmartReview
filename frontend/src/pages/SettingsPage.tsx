@@ -6,6 +6,7 @@ import {
   Col,
   Form,
   Input,
+  InputNumber,
   Row,
   Space,
   Tabs,
@@ -19,6 +20,7 @@ import { api } from '../api/client'
 import PageShell from '../components/PageShell'
 import type {
   KnowledgeBaseSettings,
+  DashboardSettings,
   ModelProviderSettings,
   ModelTestResult,
   OnlyofficeSettings,
@@ -43,6 +45,10 @@ type OnlyofficeForm = {
   jwt_secret?: string
 }
 
+type DashboardForm = {
+  refresh_interval_minutes: number
+}
+
 function volcengineTestReady(m: ModelProviderSettings | undefined) {
   if (!m) return false
   const v = m.volcengine
@@ -61,6 +67,7 @@ export default function SettingsPage() {
   const [kbForm] = Form.useForm<KbForm>()
   const [modelForm] = Form.useForm<ModelForm>()
   const [ooForm] = Form.useForm<OnlyofficeForm>()
+  const [dashboardForm] = Form.useForm<DashboardForm>()
 
   const { data: kbData, isLoading: kbLoading } = useQuery({
     queryKey: ['settings', 'knowledge-base'],
@@ -82,6 +89,14 @@ export default function SettingsPage() {
     queryKey: ['settings', 'onlyoffice'],
     queryFn: async () => {
       const { data: row } = await api.get<OnlyofficeSettings>('/settings/onlyoffice')
+      return row
+    },
+  })
+
+  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
+    queryKey: ['settings', 'dashboard'],
+    queryFn: async () => {
+      const { data: row } = await api.get<DashboardSettings>('/settings/dashboard')
       return row
     },
   })
@@ -115,6 +130,14 @@ export default function SettingsPage() {
       })
     }
   }, [ooData, ooForm])
+
+  useEffect(() => {
+    if (dashboardData) {
+      dashboardForm.setFieldsValue({
+        refresh_interval_minutes: dashboardData.refresh_interval_minutes,
+      })
+    }
+  }, [dashboardData, dashboardForm])
 
   const saveKbMut = useMutation({
     mutationFn: async (values: KbForm) => {
@@ -180,6 +203,19 @@ export default function SettingsPage() {
     onSuccess: async () => {
       message.success('已保存 OnlyOffice 配置')
       await qc.invalidateQueries({ queryKey: ['settings', 'onlyoffice'] })
+    },
+    onError: () => message.error('保存失败'),
+  })
+
+  const saveDashboardMut = useMutation({
+    mutationFn: async (values: DashboardForm) => {
+      await api.put<DashboardSettings>('/settings/dashboard', {
+        refresh_interval_minutes: values.refresh_interval_minutes,
+      })
+    },
+    onSuccess: async () => {
+      message.success('已保存看板统计配置')
+      await qc.invalidateQueries({ queryKey: ['settings', 'dashboard'] })
     },
     onError: () => message.error('保存失败'),
   })
@@ -311,6 +347,34 @@ export default function SettingsPage() {
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saveOoMut.isPending}>
+            保存
+          </Button>
+        </Form.Item>
+      </Form>
+    </Card>
+  )
+
+  const dashboardTab: ReactNode = (
+    <Card title="数据看板统计" loading={dashboardLoading}>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        设置后台聚合统计的刷新间隔。看板页面将始终读取最近一次快照，不在请求时重算。
+      </Typography.Paragraph>
+      <Form
+        form={dashboardForm}
+        layout="vertical"
+        onFinish={(v) => saveDashboardMut.mutate(v)}
+        disabled={saveDashboardMut.isPending}
+      >
+        <Form.Item
+          label="统计刷新间隔（分钟）"
+          name="refresh_interval_minutes"
+          rules={[{ required: true, message: '请填写刷新间隔' }]}
+          extra="建议 5-240 分钟；修改后在下一轮调度生效"
+        >
+          <InputNumber min={5} max={240} precision={0} style={{ width: 220 }} />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saveDashboardMut.isPending}>
             保存
           </Button>
         </Form.Item>
@@ -518,6 +582,7 @@ export default function SettingsPage() {
           items={[
             { key: 'kb', label: '知识库', children: knowledgeTab },
             { key: 'model', label: '模型配置', children: modelTab },
+            { key: 'dashboard', label: '数据看板', children: dashboardTab },
             { key: 'onlyoffice', label: 'OnlyOffice', children: onlyofficeTab },
           ]}
         />

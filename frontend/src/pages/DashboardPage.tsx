@@ -72,6 +72,7 @@ export default function DashboardPage() {
       })
       return body
     },
+    refetchInterval: 60_000,
   })
 
   useEffect(() => {
@@ -118,6 +119,13 @@ export default function DashboardPage() {
   const pct = (v: number | null | undefined) =>
     v == null ? '—' : `${Math.round(v * 1000) / 10}%`
 
+  const refreshedAtText = useMemo(() => {
+    if (!data?.refreshed_at) return '等待后台生成首个快照'
+    const dt = new Date(data.refreshed_at)
+    if (Number.isNaN(dt.getTime())) return data.refreshed_at
+    return dt.toLocaleString()
+  }, [data?.refreshed_at])
+
   return (
     <div className="dashboard-wall">
       <div className="dashboard-wall__toolbar">
@@ -149,7 +157,7 @@ export default function DashboardPage() {
         </Space>
       </div>
       <p className="dashboard-wall__hint">
-        任务趋势按 UTC 日历日聚合；完成率 = 成功 / (成功 + 失败)。Dify 分片数来自接口拉取，缓存约 2 分钟。
+        最近刷新：{refreshedAtText}。任务趋势按 UTC 日历日聚合；完成率 = 成功 / (成功 + 失败)。
       </p>
 
       {isLoading || !data ? (

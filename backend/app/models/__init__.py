@@ -1,4 +1,6 @@
 from app.models.basis_item import BasisItem
+from app.models.dashboard_runtime_settings import DashboardRuntimeSettings
+from app.models.dashboard_summary_snapshot import DashboardSummarySnapshot
 from app.models.knowledge_base_settings import KnowledgeBaseSettings
 from app.models.onlyoffice_settings import OnlyofficeSettings
 from app.models.model_provider_settings import ModelProviderSettings
@@ -11,6 +13,8 @@ __all__ = [
     "User",
     "SchemeType",
     "BasisItem",
+    "DashboardRuntimeSettings",
+    "DashboardSummarySnapshot",
     "SchemeTemplate",
     "KnowledgeBaseSettings",
     "OnlyofficeSettings",

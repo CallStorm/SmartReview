@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +39,7 @@ class DifyDashboardBlock(BaseModel):
 
 
 class DashboardSummary(BaseModel):
+    refreshed_at: datetime | None = Field(None, description="快照最近刷新时间（UTC）")
     users_total: int
     users_admin: int
     users_regular: int

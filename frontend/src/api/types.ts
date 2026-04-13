@@ -214,6 +214,7 @@ export interface DashboardDifyBlock {
 }
 
 export interface DashboardSummary {
+  refreshed_at: string | null
   users_total: number
   users_admin: number
   users_regular: number
@@ -228,4 +229,8 @@ export interface DashboardSummary {
   tasks_by_status: DashboardTaskByStatus[]
   tasks_by_scheme_type: DashboardTaskBySchemeType[]
   dify: DashboardDifyBlock
+}
+
+export interface DashboardSettings {
+  refresh_interval_minutes: number
 }
