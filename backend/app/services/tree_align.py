@@ -17,6 +17,39 @@ def _node_title(n: dict[str, Any]) -> str:
     return norm_title(str(n.get("title") or ""))
 
 
+def _template_max_depth(nodes: list[dict[str, Any]]) -> int:
+    """Height of the template forest: 0 for empty, 1 for roots-only, etc."""
+    if not nodes:
+        return 0
+    return 1 + max(
+        _template_max_depth(n.get("children") or []) for n in nodes
+    )
+
+
+def _prune_user_tree_to_depth(
+    nodes: list[dict[str, Any]],
+    max_depth: int,
+    depth: int = 1,
+) -> list[dict[str, Any]]:
+    """
+    Keep only the first ``max_depth`` levels of the user outline.
+    Deeper headings (e.g. user uses Heading 3–9 where the template only defines two levels)
+    are dropped from structure comparison; body/content under kept nodes is unchanged
+    on the dict, but their ``children`` lists are cleared at the cutoff.
+    """
+    if max_depth <= 0:
+        return []
+    out: list[dict[str, Any]] = []
+    for n in nodes:
+        ch = n.get("children") or []
+        if depth >= max_depth:
+            new_children: list[dict[str, Any]] = []
+        else:
+            new_children = _prune_user_tree_to_depth(ch, max_depth, depth + 1)
+        out.append({**n, "children": new_children})
+    return out
+
+
 def align_template_user_trees(
     template_nodes: list[dict[str, Any]],
     user_nodes: list[dict[str, Any]],
@@ -27,8 +60,19 @@ def align_template_user_trees(
     Returns (template_id -> user_node, structure_issues).
     Each issue: kind in missing_section|extra_section|order_mismatch, message, template_node_id,
     user_title, title_path, heading_para_index (when applicable).
+
+    Comparison depth follows the **template** only:
+
+    - The user outline is pruned to ``_template_max_depth(template)`` so only the same number
+      of outline levels as the template participate in matching (extra deeper headings are
+      ignored for structure checks).
+    - If a template node has no children, any further headings under the matched user node
+      are ignored (not reported as extra sections).
     """
     path_prefix = path_prefix or []
+    max_depth = _template_max_depth(template_nodes)
+    if max_depth > 0:
+        user_nodes = _prune_user_tree_to_depth(user_nodes, max_depth)
     mapping: dict[str, dict[str, Any]] = {}
     issues: list[dict[str, Any]] = []
 
@@ -81,7 +125,12 @@ def align_template_user_trees(
             uc = u_children[found_j]
             if tid:
                 mapping[tid] = uc
-            walk(tc.get("children") or [], uc.get("children") or [], path + [want])
+            next_t = tc.get("children") or []
+            if not next_t:
+                # Template ends here: deeper headings in the user file are out of scope.
+                walk([], [], path + [want])
+            else:
+                walk(next_t, uc.get("children") or [], path + [want])
             ui = found_j + 1
         for k in range(ui, len(u_children)):
             ut = _node_title(u_children[k])
