@@ -50,28 +50,21 @@ function extractStandardsText(text: string): string[] {
   return Array.from(new Set(hits.map((x) => x.replace(/\s+/g, ' ').trim())))
 }
 
-function buildOptimizationSuggestion(message: string, evidence: string): string[] {
-  const text = `${message} ${evidence}`.toLowerCase()
-  const tips: string[] = []
-  if (text.includes('跨度')) {
-    tips.push('补充梁跨度参数（建议按主梁/次梁分别给出跨度范围与控制值）。')
+function extractAiSuggestions(related: Record<string, unknown> | undefined): string[] {
+  if (!related) return []
+  const out: string[] = []
+  const pushText = (v: unknown) => {
+    const s = String(v ?? '').trim()
+    if (s) out.push(s)
   }
-  if (text.includes('截面')) {
-    tips.push('补充梁截面尺寸（宽×高），并与支模验算参数保持一致。')
+  const arr = related.suggestions
+  if (Array.isArray(arr)) {
+    arr.forEach((x) => pushText(x))
   }
-  if (text.includes('板厚')) {
-    tips.push('补充板厚参数，明确典型板厚与不利工况板厚。')
-  }
-  if (text.includes('标高') || text.includes('高度') || text.includes('支模')) {
-    tips.push('补充支模标高与支模高度，明确计算口径（架体顶部至基础底面）。')
-  }
-  if (text.includes('地基') || text.includes('周边') || text.includes('环境')) {
-    tips.push('补充地基承载情况与周边影响分析（临建、管线、通道、排水、动荷载等）。')
-  }
-  if (tips.length === 0) {
-    tips.push('结合本问题补充可量化参数、判定依据及验算口径，避免仅描述性表述。')
-  }
-  return tips
+  pushText(related.suggestion)
+  pushText(related.optimize_suggestion)
+  pushText(related.optimization_suggestion)
+  return Array.from(new Set(out))
 }
 
 function parseReport(json: string | null | undefined): ReviewReportV1 | null {
@@ -404,10 +397,8 @@ export default function ManualReviewPage() {
                             ].filter(Boolean),
                           ),
                         )
-                        const suggestions = buildOptimizationSuggestion(
-                          it.message ?? '',
-                          it.evidence ?? '',
-                        )
+                        const suggestions = extractAiSuggestions(it.related)
+                        const showStandardReference = activeStep?.step_id === 'compilation_basis'
                         return (
                           <Card
                             size="small"
@@ -467,16 +458,22 @@ export default function ManualReviewPage() {
                                 优化建议
                               </Typography.Text>
                               <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
-                                {suggestions.map((s, idx) => (
-                                  <li key={`${it.issue_id || it.message}-s-${idx}`}>{s}</li>
-                                ))}
+                                {suggestions.length > 0 ? (
+                                  suggestions.map((s, idx) => (
+                                    <li key={`${it.issue_id || it.message}-s-${idx}`}>{s}</li>
+                                  ))
+                                ) : (
+                                  <li>模型未返回整改建议，请在模板提示词中补充“输出 suggestions”。</li>
+                                )}
                               </ul>
-                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                规范参考：
-                                {standards.length > 0
-                                  ? standards.map((s) => ` ${s}`).join('；')
-                                  : ' 未识别到明确规范编号，建议补充引用条款（如 GB 50204、JGJ 162 等）。'}
-                              </Typography.Text>
+                              {showStandardReference ? (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  规范参考：
+                                  {standards.length > 0
+                                    ? standards.map((s) => ` ${s}`).join('；')
+                                    : ' 未识别到明确规范编号，建议补充引用条款（如 GB 50204、JGJ 162 等）。'}
+                                </Typography.Text>
+                              ) : null}
                             </div>
 
                             {it.anchor && Object.keys(it.anchor).length > 0 ? (

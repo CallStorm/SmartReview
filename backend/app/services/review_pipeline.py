@@ -227,9 +227,13 @@ def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
     return (
         "以下为待审文档中与编制依据相关的章节全文：\n\n---\n"
         f"{full_content[:24000]}\n---\n\n"
+        "说明：若章节中存在表格，系统会按“[表格第N行] 单元格1 | 单元格2 ...”形式展开。\n\n"
         "以下为该方案类型在系统中登记的编制依据条目（规范列表），请对照检查文档中引用是否正确、是否遗漏应引用规范、效力状态是否合理：\n"
         f"{catalog}\n\n"
-        "请输出 JSON：若某条规范在文档中存在问题，在 issues 中说明标准号或文献名称、问题原因；related 中可含 standard_no、doc_name。"
+        "审核要求：必须同时检查正文与表格中的规范编号/名称，不得遗漏仅出现在表格单元格里的引用。\n"
+        "请输出 JSON：若某条规范在文档中存在问题，在 issues 中说明标准号或文献名称、问题原因；"
+        "并在 related 中给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        "related 中还可含 standard_no、doc_name。"
     )
 
 
@@ -240,7 +244,8 @@ def _context_prompt(current_title: str, current_text: str, ref_blocks: list[tupl
     return (
         "\n".join(parts)
         + "\n请检查上述章节在数据、结论、术语、前后要求等方面是否一致。输出 JSON，"
-        "issues 中说明哪两章不一致及原因，related 含 chapter_a、chapter_b。"
+        "issues 中说明哪两章不一致及原因，"
+        "related 含 chapter_a、chapter_b，并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
 
 
@@ -264,7 +269,8 @@ def _content_prompt(
         "2. 逐项核查【当前章节及子节正文】；若缺失关键信息，明确指出缺失项。\n"
         "3. 使用【引用章节正文】与【知识库检索片段】做交叉验证与依据补充。\n"
         "4. 对值为“(无)”的输入块，不得臆测内容；如影响判断，请在 issues 中说明“证据不足/无法交叉验证”。\n"
-        "5. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。"
+        "5. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
+        "6. 每条 issue 的 related 中必须给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
 
 
