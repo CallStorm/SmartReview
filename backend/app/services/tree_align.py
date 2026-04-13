@@ -50,6 +50,17 @@ def _prune_user_tree_to_depth(
     return out
 
 
+def _index_nodes_by_heading_para(
+    nodes: list[dict[str, Any]],
+    out: dict[int, dict[str, Any]],
+) -> None:
+    for n in nodes:
+        hpi = n.get("heading_para_index")
+        if isinstance(hpi, int):
+            out[hpi] = n
+        _index_nodes_by_heading_para(n.get("children") or [], out)
+
+
 def align_template_user_trees(
     template_nodes: list[dict[str, Any]],
     user_nodes: list[dict[str, Any]],
@@ -70,11 +81,14 @@ def align_template_user_trees(
       are ignored (not reported as extra sections).
     """
     path_prefix = path_prefix or []
+    original_user_nodes = user_nodes
     max_depth = _template_max_depth(template_nodes)
     if max_depth > 0:
         user_nodes = _prune_user_tree_to_depth(user_nodes, max_depth)
     mapping: dict[str, dict[str, Any]] = {}
     issues: list[dict[str, Any]] = []
+    original_nodes_by_hpi: dict[int, dict[str, Any]] = {}
+    _index_nodes_by_heading_para(original_user_nodes, original_nodes_by_hpi)
 
     def walk(
         t_children: list[dict[str, Any]],
@@ -124,7 +138,12 @@ def align_template_user_trees(
                 )
             uc = u_children[found_j]
             if tid:
-                mapping[tid] = uc
+                hpi = uc.get("heading_para_index")
+                if isinstance(hpi, int) and hpi in original_nodes_by_hpi:
+                    mapping[tid] = original_nodes_by_hpi[hpi]
+                else:
+                    # Fallback to the compared node if index lookup is unavailable.
+                    mapping[tid] = uc
             next_t = tc.get("children") or []
             if not next_t:
                 # Template ends here: deeper headings in the user file are out of scope.

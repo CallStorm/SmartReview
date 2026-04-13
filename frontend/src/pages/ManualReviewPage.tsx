@@ -31,6 +31,49 @@ const STEP_LABELS: Record<string, string> = {
   content: '内容审核',
 }
 
+const SEVERITY_META: Record<string, { label: string; color: string }> = {
+  error: { label: '严重', color: 'red' },
+  warning: { label: '警告', color: 'gold' },
+  info: { label: '提示', color: 'blue' },
+}
+
+function asStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.map((x) => String(x ?? '').trim()).filter(Boolean)
+}
+
+function extractStandardsText(text: string): string[] {
+  if (!text.trim()) return []
+  const regex =
+    /\b(?:GB|JGJ|DBJ|DB|CECS|T\/[A-Z]+)\s*[\-\/]?\s*\d{2,6}(?:\.\d+)?(?:-\d{4})?\b/gi
+  const hits = text.match(regex) ?? []
+  return Array.from(new Set(hits.map((x) => x.replace(/\s+/g, ' ').trim())))
+}
+
+function buildOptimizationSuggestion(message: string, evidence: string): string[] {
+  const text = `${message} ${evidence}`.toLowerCase()
+  const tips: string[] = []
+  if (text.includes('跨度')) {
+    tips.push('补充梁跨度参数（建议按主梁/次梁分别给出跨度范围与控制值）。')
+  }
+  if (text.includes('截面')) {
+    tips.push('补充梁截面尺寸（宽×高），并与支模验算参数保持一致。')
+  }
+  if (text.includes('板厚')) {
+    tips.push('补充板厚参数，明确典型板厚与不利工况板厚。')
+  }
+  if (text.includes('标高') || text.includes('高度') || text.includes('支模')) {
+    tips.push('补充支模标高与支模高度，明确计算口径（架体顶部至基础底面）。')
+  }
+  if (text.includes('地基') || text.includes('周边') || text.includes('环境')) {
+    tips.push('补充地基承载情况与周边影响分析（临建、管线、通道、排水、动荷载等）。')
+  }
+  if (tips.length === 0) {
+    tips.push('结合本问题补充可量化参数、判定依据及验算口径，避免仅描述性表述。')
+  }
+  return tips
+}
+
 function parseReport(json: string | null | undefined): ReviewReportV1 | null {
   if (!json?.trim()) return null
   try {
@@ -330,43 +373,141 @@ export default function ManualReviewPage() {
                   dataSource={activeStep.issues}
                   renderItem={(it) => (
                     <List.Item>
-                      <List.Item.Meta
-                        title={
-                          <Space wrap>
-                            <Tag>{it.severity}</Tag>
-                            <span>{it.message}</span>
-                          </Space>
-                        }
-                        description={
-                          <div>
-                            {it.evidence ? (
-                              <pre
-                                style={{
-                                  marginTop: 8,
-                                  whiteSpace: 'pre-wrap',
-                                  fontSize: 12,
-                                  background: 'var(--ant-color-fill-quaternary)',
-                                  padding: 8,
-                                  borderRadius: 6,
-                                }}
-                              >
-                                {it.evidence}
-                              </pre>
-                            ) : null}
+                      {(() => {
+                        const titlePath = asStringArray(it.anchor?.title_path)
+                        const templateNodeId =
+                          it.anchor?.template_node_id !== undefined &&
+                          it.anchor?.template_node_id !== null
+                            ? String(it.anchor.template_node_id)
+                            : ''
+                        const headingParaIndex =
+                          it.anchor?.heading_para_index !== undefined &&
+                          it.anchor?.heading_para_index !== null
+                            ? String(it.anchor.heading_para_index)
+                            : ''
+                        const userTitle =
+                          it.anchor?.user_title !== undefined && it.anchor?.user_title !== null
+                            ? String(it.anchor.user_title)
+                            : ''
+                        const relatedEntries = Object.entries(it.related ?? {}).filter(
+                          ([, v]) => v !== undefined && v !== null && String(v).trim().length > 0,
+                        )
+                        const relatedText = relatedEntries
+                          .map(([k, v]) => `${k}=${String(v)}`)
+                          .join('；')
+                        const standards = Array.from(
+                          new Set(
+                            [
+                              ...extractStandardsText(it.message ?? ''),
+                              ...extractStandardsText(it.evidence ?? ''),
+                              ...extractStandardsText(relatedText),
+                            ].filter(Boolean),
+                          ),
+                        )
+                        const suggestions = buildOptimizationSuggestion(
+                          it.message ?? '',
+                          it.evidence ?? '',
+                        )
+                        return (
+                          <Card
+                            size="small"
+                            style={{
+                              width: '100%',
+                              borderRadius: 8,
+                              background: '#fff',
+                              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
+                            }}
+                          >
+                            <div style={{ marginBottom: 10 }}>
+                              <Space wrap>
+                                <Tag color={SEVERITY_META[it.severity]?.color ?? 'default'}>
+                                  {SEVERITY_META[it.severity]?.label ?? it.severity}
+                                </Tag>
+                                <Typography.Text strong>问题：{it.message}</Typography.Text>
+                              </Space>
+                              {!!it.evidence?.trim() && (
+                                <Typography.Paragraph
+                                  type="secondary"
+                                  style={{ marginTop: 8, marginBottom: 0 }}
+                                >
+                                  原因：{it.evidence}
+                                </Typography.Paragraph>
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                marginBottom: 10,
+                                padding: '10px 12px',
+                                borderRadius: 6,
+                                background: 'var(--ant-color-fill-quaternary)',
+                              }}
+                            >
+                              <Typography.Text strong style={{ fontSize: 12 }}>
+                                定位数据
+                              </Typography.Text>
+                              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                                {titlePath.length > 0 && <li>章节：{titlePath.join(' > ')}</li>}
+                                {!!templateNodeId && <li>模板节点：{templateNodeId}</li>}
+                                {!!userTitle && <li>文档标题：{userTitle}</li>}
+                                {!!headingParaIndex && <li>段落索引：{headingParaIndex}</li>}
+                                {!!relatedText && <li>附加依据：{relatedText}</li>}
+                              </ul>
+                            </div>
+
+                            <div
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 6,
+                                background: '#f6ffed',
+                                border: '1px solid #d9f7be',
+                              }}
+                            >
+                              <Typography.Text strong style={{ fontSize: 12 }}>
+                                优化建议
+                              </Typography.Text>
+                              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                                {suggestions.map((s, idx) => (
+                                  <li key={`${it.issue_id || it.message}-s-${idx}`}>{s}</li>
+                                ))}
+                              </ul>
+                              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                规范参考：
+                                {standards.length > 0
+                                  ? standards.map((s) => ` ${s}`).join('；')
+                                  : ' 未识别到明确规范编号，建议补充引用条款（如 GB 50204、JGJ 162 等）。'}
+                              </Typography.Text>
+                            </div>
+
                             {it.anchor && Object.keys(it.anchor).length > 0 ? (
-                              <pre
-                                style={{
-                                  marginTop: 8,
-                                  fontSize: 11,
-                                  opacity: 0.85,
-                                }}
-                              >
-                                {JSON.stringify(it.anchor, null, 2)}
-                              </pre>
+                              <Collapse
+                                ghost
+                                style={{ marginTop: 4 }}
+                                items={[
+                                  {
+                                    key: 'raw-anchor',
+                                    label: '查看原始定位数据',
+                                    children: (
+                                      <pre
+                                        style={{
+                                          marginTop: 0,
+                                          marginBottom: 0,
+                                          fontSize: 11,
+                                          opacity: 0.85,
+                                          whiteSpace: 'pre-wrap',
+                                          wordBreak: 'break-word',
+                                        }}
+                                      >
+                                        {JSON.stringify(it.anchor, null, 2)}
+                                      </pre>
+                                    ),
+                                  },
+                                ]}
+                              />
                             ) : null}
-                          </div>
-                        }
-                      />
+                          </Card>
+                        )
+                      })()}
                     </List.Item>
                   )}
                 />
