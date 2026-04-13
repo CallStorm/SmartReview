@@ -3,6 +3,7 @@ import './ReviewPage.css'
 import {
   AuditOutlined,
   CloudDownloadOutlined,
+  DeleteOutlined,
   ExportOutlined,
   FileSearchOutlined,
   FileTextOutlined,
@@ -14,6 +15,7 @@ import {
   Button,
   Form,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -169,6 +171,31 @@ export default function ReviewPage() {
           ? String((err.response.data as { detail?: unknown }).detail)
           : ''
       message.error(detailMsg || '提交失败')
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: async (taskId: number) => {
+      await api.delete(`/review-tasks/${taskId}`)
+    },
+    onSuccess: async () => {
+      message.success('已删除该审核任务')
+      await qc.invalidateQueries({ queryKey: ['review-tasks'] })
+    },
+    onError: (err: unknown) => {
+      const detailMsg =
+        err &&
+        typeof err === 'object' &&
+        'response' in err &&
+        err.response &&
+        typeof err.response === 'object' &&
+        'data' in err.response &&
+        err.response.data &&
+        typeof err.response.data === 'object' &&
+        'detail' in err.response.data
+          ? String((err.response.data as { detail?: unknown }).detail)
+          : ''
+      message.error(detailMsg || '删除失败')
     },
   })
 
@@ -331,7 +358,7 @@ export default function ReviewPage() {
             {
               title: '操作',
               key: 'act',
-              width: 400,
+              width: 460,
               render: (_, row) => (
                 <Space size="middle" wrap={false}>
                   <Button
@@ -359,6 +386,27 @@ export default function ReviewPage() {
                   >
                     导出报告
                   </Button>
+                  <Popconfirm
+                    title="删除该审核任务？"
+                    description="将移除任务记录及已上传的文档，且不可恢复。"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{
+                      danger: true,
+                      loading:
+                        deleteMut.isPending && deleteMut.variables === row.id,
+                    }}
+                    onConfirm={() => deleteMut.mutate(row.id)}
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                    >
+                      删除
+                    </Button>
+                  </Popconfirm>
                 </Space>
               ),
             },

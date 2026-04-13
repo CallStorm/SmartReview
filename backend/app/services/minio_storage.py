@@ -57,3 +57,16 @@ def get_object_bytes(object_key: str) -> bytes:
     finally:
         r.close()
         r.release_conn()
+
+
+def remove_object_if_exists(object_key: str) -> None:
+    """Best-effort delete; ignores missing object or errors."""
+    key = (object_key or "").strip()
+    if not key:
+        return
+    try:
+        s = get_settings()
+        c = get_client()
+        c.remove_object(s.minio_bucket, key)
+    except Exception:
+        pass
