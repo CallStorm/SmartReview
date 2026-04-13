@@ -12,6 +12,7 @@ class DashboardSettingsPublic(BaseModel):
         ge=MIN_REFRESH_INTERVAL_MINUTES,
         le=MAX_REFRESH_INTERVAL_MINUTES,
     )
+    prompt_debug_enabled: bool = False
 
 
 class DashboardSettingsUpdate(BaseModel):
@@ -20,3 +21,4 @@ class DashboardSettingsUpdate(BaseModel):
         ge=MIN_REFRESH_INTERVAL_MINUTES,
         le=MAX_REFRESH_INTERVAL_MINUTES,
     )
+    prompt_debug_enabled: bool = False

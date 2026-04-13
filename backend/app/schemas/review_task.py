@@ -26,6 +26,19 @@ class ReviewTaskPublic(BaseModel):
         default=None,
         description="审核过程日志；列表接口为减轻负载不返回，仅详情接口返回",
     )
+    debug_prompts: list["DebugPromptPublic"] | None = Field(
+        default=None,
+        description="调试开关开启后采集的拼接提示词，仅详情接口返回",
+    )
+
+
+class DebugPromptPublic(BaseModel):
+    step_id: str
+    template_node_id: str = ""
+    title_path: list[str] = Field(default_factory=list)
+    prompt_text: str
+    prompt_length: int
+    created_at: str
 
 
 class ReviewTaskCreateResponse(BaseModel):

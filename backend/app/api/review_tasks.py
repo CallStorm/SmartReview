@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import quote
@@ -14,7 +15,7 @@ from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.models.user import User, UserRole
 from app.schemas.onlyoffice_editor import OnlyofficeEditorConfigResponse
-from app.schemas.review_task import ReviewTaskCreateResponse, ReviewTaskPublic
+from app.schemas.review_task import DebugPromptPublic, ReviewTaskCreateResponse, ReviewTaskPublic
 from app.schemas.template import DownloadUrlResponse
 from app.services import minio_storage
 from app.services.onlyoffice import (
@@ -36,7 +37,32 @@ def _task_public(
     *,
     include_review_log: bool = True,
     include_result_json: bool = True,
+    include_debug_prompts: bool = True,
 ) -> ReviewTaskPublic:
+    debug_prompts: list[DebugPromptPublic] | None = None
+    if include_debug_prompts and include_result_json and (t.review_result_json or "").strip():
+        try:
+            parsed = json.loads(t.review_result_json or "{}")
+            raw_prompts = parsed.get("debug_prompts")
+            if isinstance(raw_prompts, list):
+                rows: list[DebugPromptPublic] = []
+                for it in raw_prompts:
+                    if not isinstance(it, dict):
+                        continue
+                    rows.append(
+                        DebugPromptPublic(
+                            step_id=str(it.get("step_id") or ""),
+                            template_node_id=str(it.get("template_node_id") or ""),
+                            title_path=[str(x) for x in (it.get("title_path") or []) if str(x)],
+                            prompt_text=str(it.get("prompt_text") or ""),
+                            prompt_length=int(it.get("prompt_length") or 0),
+                            created_at=str(it.get("created_at") or ""),
+                        )
+                    )
+                debug_prompts = rows or None
+        except Exception:
+            debug_prompts = None
+
     st = t.scheme_type
     return ReviewTaskPublic(
         id=t.id,
@@ -50,6 +76,7 @@ def _task_public(
         review_result_json=(t.review_result_json if include_result_json else None),
         output_object_key=t.output_object_key,
         review_log=(t.review_log if include_review_log else None),
+        debug_prompts=debug_prompts if include_debug_prompts else None,
         original_filename=t.original_filename,
         created_at=t.created_at,
         updated_at=t.updated_at,
@@ -74,7 +101,13 @@ def list_my_tasks(
     )
     rows = q.limit(min(limit, 200)).all()
     return [
-        _task_public(r, include_review_log=False, include_result_json=False) for r in rows
+        _task_public(
+            r,
+            include_review_log=False,
+            include_result_json=False,
+            include_debug_prompts=False,
+        )
+        for r in rows
     ]
 
 

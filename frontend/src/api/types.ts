@@ -175,9 +175,20 @@ export interface ReviewTask {
   output_object_key?: string | null
   /** 列表接口不返回；详情接口返回审核过程日志 */
   review_log?: string | null
+  /** 调试开关开启后，仅详情接口返回拼接提示词 */
+  debug_prompts?: DebugPromptItem[] | null
   original_filename: string
   created_at: string
   updated_at: string
+}
+
+export interface DebugPromptItem {
+  step_id: string
+  template_node_id: string
+  title_path: string[]
+  prompt_text: string
+  prompt_length: number
+  created_at: string
 }
 
 export interface DashboardTaskByDay {
@@ -233,4 +244,5 @@ export interface DashboardSummary {
 
 export interface DashboardSettings {
   refresh_interval_minutes: number
+  prompt_debug_enabled: boolean
 }

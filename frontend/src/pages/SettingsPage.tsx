@@ -9,6 +9,7 @@ import {
   InputNumber,
   Row,
   Space,
+  Switch,
   Tabs,
   Tag,
   Tooltip,
@@ -47,6 +48,7 @@ type OnlyofficeForm = {
 
 type DashboardForm = {
   refresh_interval_minutes: number
+  prompt_debug_enabled: boolean
 }
 
 function volcengineTestReady(m: ModelProviderSettings | undefined) {
@@ -135,6 +137,7 @@ export default function SettingsPage() {
     if (dashboardData) {
       dashboardForm.setFieldsValue({
         refresh_interval_minutes: dashboardData.refresh_interval_minutes,
+        prompt_debug_enabled: dashboardData.prompt_debug_enabled,
       })
     }
   }, [dashboardData, dashboardForm])
@@ -211,10 +214,11 @@ export default function SettingsPage() {
     mutationFn: async (values: DashboardForm) => {
       await api.put<DashboardSettings>('/settings/dashboard', {
         refresh_interval_minutes: values.refresh_interval_minutes,
+        prompt_debug_enabled: values.prompt_debug_enabled,
       })
     },
     onSuccess: async () => {
-      message.success('已保存看板统计配置')
+      message.success('已保存看板统计配置（调试开关仅对新任务生效）')
       await qc.invalidateQueries({ queryKey: ['settings', 'dashboard'] })
     },
     onError: () => message.error('保存失败'),
@@ -372,6 +376,14 @@ export default function SettingsPage() {
           extra="建议 5-240 分钟；修改后在下一轮调度生效"
         >
           <InputNumber min={5} max={240} precision={0} style={{ width: 220 }} />
+        </Form.Item>
+        <Form.Item
+          label="方案审核提示词调试"
+          name="prompt_debug_enabled"
+          valuePropName="checked"
+          extra="开启后会记录每一步最终拼接提示词，仅对开启后新任务生效，用于排查审核行为"
+        >
+          <Switch checkedChildren="开启" unCheckedChildren="关闭" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saveDashboardMut.isPending}>

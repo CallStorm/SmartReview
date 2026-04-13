@@ -9,6 +9,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Collapse,
   Empty,
   List,
   Space,
@@ -117,6 +118,8 @@ export default function ManualReviewPage() {
   }
 
   const activeStep = steps[Math.min(selectedIdx, Math.max(0, steps.length - 1))]
+  const activeDebugPrompts =
+    task.debug_prompts?.filter((p) => p.step_id === activeStep?.step_id) ?? []
 
   return (
     <div
@@ -289,6 +292,36 @@ export default function ManualReviewPage() {
                 </Tag>
                 <Typography.Text type="secondary">{activeStep.summary}</Typography.Text>
               </Space>
+              <Typography.Title level={5}>拼接提示词（调试）</Typography.Title>
+              {activeDebugPrompts.length === 0 ? (
+                <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                  未开启调试开关，或该任务在开启前执行，暂无可展示提示词。
+                </Typography.Text>
+              ) : (
+                <Collapse
+                  style={{ marginBottom: 16 }}
+                  items={activeDebugPrompts.map((item, idx) => ({
+                    key: `${item.step_id}-${item.template_node_id}-${idx}`,
+                    label: item.template_node_id
+                      ? `节点 ${item.template_node_id} · ${item.prompt_length} 字符`
+                      : `提示词 #${idx + 1} · ${item.prompt_length} 字符`,
+                    children: (
+                      <pre
+                        style={{
+                          margin: 0,
+                          whiteSpace: 'pre-wrap',
+                          fontSize: 12,
+                          background: 'var(--ant-color-fill-quaternary)',
+                          padding: 8,
+                          borderRadius: 6,
+                        }}
+                      >
+                        {item.prompt_text}
+                      </pre>
+                    ),
+                  }))}
+                />
+              )}
               <Typography.Title level={5}>问题列表</Typography.Title>
               {activeStep.issues.length === 0 ? (
                 <Typography.Text type="secondary">本步骤无问题项</Typography.Text>

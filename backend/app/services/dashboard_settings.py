@@ -26,3 +26,8 @@ def get_dashboard_refresh_interval_minutes(db: Session) -> int:
     if value > MAX_REFRESH_INTERVAL_MINUTES:
         return MAX_REFRESH_INTERVAL_MINUTES
     return value
+
+
+def get_prompt_debug_enabled(db: Session) -> bool:
+    row = get_or_create_dashboard_settings(db)
+    return bool(row.prompt_debug_enabled)

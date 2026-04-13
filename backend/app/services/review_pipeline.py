@@ -26,6 +26,7 @@ from app.services.doc_tree_utils import (
     title_path_for_node,
 )
 from app.services.docx_comments import inject_comments_at_paragraphs
+from app.services.dashboard_settings import get_prompt_debug_enabled
 from app.services.dify_client import retrieve_dataset_chunks
 from app.services.dify_settings import get_dify_url_and_key
 from app.services.llm.chat import chat_json
@@ -164,7 +165,19 @@ def _llm_review(
     step_id: str,
     user_prompt: str,
     anchor_base: dict[str, Any],
+    debug_prompts: list[dict[str, Any]] | None = None,
 ) -> ReportStep:
+    if debug_prompts is not None:
+        debug_prompts.append(
+            {
+                "step_id": step_id,
+                "template_node_id": str(anchor_base.get("template_node_id") or ""),
+                "title_path": anchor_base.get("title_path") or [],
+                "prompt_text": user_prompt,
+                "prompt_length": len(user_prompt),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
     try:
         data = chat_json(db, user_message=user_prompt, system=JSON_SYSTEM, max_tokens=8192)
     except Exception as first:
@@ -191,6 +204,17 @@ def _llm_review(
                 ],
             )
     return _normalize_llm_step(step_id, data, anchor_base)
+
+
+def _review_result_to_json(
+    report: ReviewReportV1,
+    *,
+    debug_prompts: list[dict[str, Any]] | None = None,
+) -> str:
+    payload: dict[str, Any] = report.model_dump(mode="json")
+    if debug_prompts:
+        payload["debug_prompts"] = debug_prompts
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
@@ -288,13 +312,18 @@ def run_review_pipeline(task_id: int) -> None:
         structure_step = _structure_issues_to_report(struct_raw)
 
         provider = effective_default_provider(db)
+        prompt_debug_enabled = get_prompt_debug_enabled(db)
+        debug_prompts: list[dict[str, Any]] = []
         report = ReviewReportV1(
             steps=[structure_step],
             model_provider=provider,
         )
 
         if "structure" in active and not structure_step.passed:
-            task.review_result_json = report.to_json_str()
+            task.review_result_json = _review_result_to_json(
+                report,
+                debug_prompts=debug_prompts if prompt_debug_enabled else None,
+            )
             task.status = ReviewTaskStatus.failed
             task.review_stage = None
             task.error_message = "文档结构与模版不一致"
@@ -342,7 +371,14 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _basis_prompt(full, basis_rows)
-                    sub = _llm_review(db, task, step_id=step_id, user_prompt=prompt, anchor_base=anchor)
+                    sub = _llm_review(
+                        db,
+                        task,
+                        step_id=step_id,
+                        user_prompt=prompt,
+                        anchor_base=anchor,
+                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
+                    )
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
@@ -381,7 +417,14 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _context_prompt(cur_title, cur_text, ref_blocks)
-                    sub = _llm_review(db, task, step_id=step_id, user_prompt=prompt, anchor_base=anchor)
+                    sub = _llm_review(
+                        db,
+                        task,
+                        step_id=step_id,
+                        user_prompt=prompt,
+                        anchor_base=anchor,
+                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
+                    )
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
@@ -431,7 +474,14 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _content_prompt(current_text, ref_text, kb_text, rp)
-                    sub = _llm_review(db, task, step_id=step_id, user_prompt=prompt, anchor_base=anchor)
+                    sub = _llm_review(
+                        db,
+                        task,
+                        step_id=step_id,
+                        user_prompt=prompt,
+                        anchor_base=anchor,
+                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
+                    )
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
@@ -441,7 +491,10 @@ def run_review_pipeline(task_id: int) -> None:
                 report.steps.append(merged)
 
         task.review_stage = None
-        task.review_result_json = report.to_json_str()
+        task.review_result_json = _review_result_to_json(
+            report,
+            debug_prompts=debug_prompts if prompt_debug_enabled else None,
+        )
 
         annotations: list[tuple[int, str]] = []
         for st in report.steps:
