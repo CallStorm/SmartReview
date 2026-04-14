@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import timedelta
+from urllib.parse import quote
 
 from minio import Minio
 
@@ -38,13 +39,41 @@ def put_object(object_key: str, data: bytes, length: int, content_type: str) -> 
     )
 
 
-def presigned_get_url(object_key: str, expires_seconds: int = 3600) -> str:
+def _content_disposition_attachment(filename: str) -> str:
+    """RFC 5987: filename* for UTF-8 names; ASCII fallback for legacy clients."""
+    name = (filename or "").strip() or "download.docx"
+    if not name.lower().endswith(".docx"):
+        name = f"{name}.docx"
+    ascii_safe = "".join(
+        c if 32 <= ord(c) < 127 and c not in '\\/:*?"<>|' else "_"
+        for c in name
+    ).strip("._")
+    if not ascii_safe:
+        ascii_safe = "template.docx"
+    if len(ascii_safe) > 200:
+        ascii_safe = ascii_safe[:200]
+    quoted = quote(name, safe="")
+    return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{quoted}'
+
+
+def presigned_get_url(
+    object_key: str,
+    expires_seconds: int = 3600,
+    *,
+    download_filename: str | None = None,
+) -> str:
     s = get_settings()
     c = get_client()
+    response_headers = None
+    if download_filename:
+        response_headers = {
+            "response-content-disposition": _content_disposition_attachment(download_filename),
+        }
     return c.presigned_get_object(
         s.minio_bucket,
         object_key,
         expires=timedelta(seconds=expires_seconds),
+        response_headers=response_headers,
     )
 
 

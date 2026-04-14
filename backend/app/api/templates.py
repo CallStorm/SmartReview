@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
@@ -25,6 +26,23 @@ from app.services.word_parser import parse_docx_to_tree, tree_to_json_str
 router = APIRouter(tags=["templates"])
 
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+
+
+def _download_filename_for_scheme_template(scheme: SchemeType) -> str:
+    """Human-readable .docx name: 方案大类 + 方案名称（与前台展示一致）。"""
+    def clean(part: str) -> str:
+        s = re.sub(r'[\\/:*?"<>|\r\n\t]', "_", (part or "").strip())
+        s = re.sub(r"\s+", " ", s).strip()
+        return s[:120]
+
+    cat, name = clean(scheme.category), clean(scheme.name)
+    if cat and name:
+        base = f"{cat}_{name}"
+    else:
+        base = cat or name or "方案模板"
+    if not base.lower().endswith(".docx"):
+        base = f"{base}.docx"
+    return base
 
 
 def _validate_parsed_structure_blob(obj: object) -> None:
@@ -199,7 +217,11 @@ def get_template_download_url(
     if t is None:
         raise HTTPException(status_code=404, detail="尚未上传模版")
     try:
-        url = minio_storage.presigned_get_url(t.object_key, expires_seconds=expires_seconds)
+        url = minio_storage.presigned_get_url(
+            t.object_key,
+            expires_seconds=expires_seconds,
+            download_filename=_download_filename_for_scheme_template(scheme),
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"无法生成下载链接: {e!s}") from e
     return DownloadUrlResponse(url=url, expires_seconds=expires_seconds)
