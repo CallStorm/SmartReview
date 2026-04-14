@@ -166,6 +166,8 @@ export interface ReviewTask {
   scheme_type_id: number
   scheme_category: string
   scheme_name: string
+  /** 管理员列表视图中返回提交人用户名 */
+  owner_username?: string | null
   status: ReviewTaskStatus
   result_text: string | null
   error_message: string | null

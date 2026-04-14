@@ -10,6 +10,10 @@ class ReviewTaskPublic(BaseModel):
     scheme_type_id: int
     scheme_category: str = ""
     scheme_name: str = ""
+    owner_username: str | None = Field(
+        default=None,
+        description="提交该任务的登录用户名；列表接口在管理员视图下返回",
+    )
     status: str
     result_text: str | None = None
     error_message: str | None = None

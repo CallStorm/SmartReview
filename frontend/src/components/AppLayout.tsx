@@ -51,7 +51,7 @@ export default function AppLayout() {
     ]
 
     if (user?.role !== 'admin') {
-      return businessItems
+      return [{ key: '/review', icon: <FileSearchOutlined />, label: '方案审核' }]
     }
 
     return [

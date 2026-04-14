@@ -38,6 +38,7 @@ def _task_public(
     include_review_log: bool = True,
     include_result_json: bool = True,
     include_debug_prompts: bool = True,
+    owner_username: str | None = None,
 ) -> ReviewTaskPublic:
     debug_prompts: list[DebugPromptPublic] | None = None
     if include_debug_prompts and include_result_json and (t.review_result_json or "").strip():
@@ -69,6 +70,7 @@ def _task_public(
         scheme_type_id=t.scheme_type_id,
         scheme_category=st.category if st else "",
         scheme_name=st.name if st else "",
+        owner_username=owner_username,
         status=t.status,
         result_text=t.result_text,
         error_message=t.error_message,
@@ -89,16 +91,17 @@ def list_my_tasks(
     user: User = Depends(get_current_user),
     limit: int = 100,
 ) -> list[ReviewTaskPublic]:
-    q = (
-        db.query(SchemeReviewTask)
-        .options(
-            joinedload(SchemeReviewTask.scheme_type),
-            defer(SchemeReviewTask.review_log),
-            defer(SchemeReviewTask.review_result_json),
-        )
-        .filter(SchemeReviewTask.user_id == user.id)
-        .order_by(SchemeReviewTask.id.desc())
-    )
+    opts = [
+        joinedload(SchemeReviewTask.scheme_type),
+        defer(SchemeReviewTask.review_log),
+        defer(SchemeReviewTask.review_result_json),
+    ]
+    if user.role == UserRole.admin:
+        opts.append(joinedload(SchemeReviewTask.user))
+    q = db.query(SchemeReviewTask).options(*opts)
+    if user.role != UserRole.admin:
+        q = q.filter(SchemeReviewTask.user_id == user.id)
+    q = q.order_by(SchemeReviewTask.id.desc())
     rows = q.limit(min(limit, 200)).all()
     return [
         _task_public(
@@ -106,6 +109,7 @@ def list_my_tasks(
             include_review_log=False,
             include_result_json=False,
             include_debug_prompts=False,
+            owner_username=(r.user.username if user.role == UserRole.admin else None),
         )
         for r in rows
     ]
@@ -119,7 +123,7 @@ def get_task(
 ) -> ReviewTaskPublic:
     t = (
         db.query(SchemeReviewTask)
-        .options(joinedload(SchemeReviewTask.scheme_type))
+        .options(joinedload(SchemeReviewTask.scheme_type), joinedload(SchemeReviewTask.user))
         .filter(SchemeReviewTask.id == task_id)
         .first()
     )
@@ -127,7 +131,7 @@ def get_task(
         raise HTTPException(status_code=404, detail="任务不存在")
     if t.user_id != user.id and user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="无权查看该任务")
-    return _task_public(t)
+    return _task_public(t, owner_username=t.user.username)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -284,7 +288,7 @@ async def create_task(
     db.commit()
     loaded = (
         db.query(SchemeReviewTask)
-        .options(joinedload(SchemeReviewTask.scheme_type))
+        .options(joinedload(SchemeReviewTask.scheme_type), joinedload(SchemeReviewTask.user))
         .filter(SchemeReviewTask.id == row.id)
         .first()
     )
@@ -293,4 +297,4 @@ async def create_task(
 
     background_tasks.add_task(process_scheme_review_task, loaded.id)
 
-    return ReviewTaskCreateResponse(task=_task_public(loaded))
+    return ReviewTaskCreateResponse(task=_task_public(loaded, owner_username=user.username))

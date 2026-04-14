@@ -41,7 +41,7 @@ function RequireAdmin({ children }: { children: ReactElement }) {
     )
   }
   if (user?.role !== 'admin') {
-    return <Navigate to="/schemes" replace />
+    return <Navigate to="/review" replace />
   }
   return children
 }
@@ -51,7 +51,7 @@ function DefaultIndexRedirect() {
   if (user?.role === 'admin') {
     return <Navigate to="/dashboard" replace />
   }
-  return <Navigate to="/schemes" replace />
+  return <Navigate to="/review" replace />
 }
 
 function AppRoutes() {
@@ -68,7 +68,7 @@ function AppRoutes() {
               <p className="app-auth-loading__hint">加载中…</p>
             </div>
           ) : token && user ? (
-            <Navigate to={user.role === 'admin' ? '/dashboard' : '/schemes'} replace />
+            <Navigate to={user.role === 'admin' ? '/dashboard' : '/review'} replace />
           ) : (
             <LoginPage />
           )
@@ -91,7 +91,14 @@ function AppRoutes() {
             </RequireAdmin>
           }
         />
-        <Route path="schemes" element={<SchemesPage />} />
+        <Route
+          path="schemes"
+          element={
+            <RequireAdmin>
+              <SchemesPage />
+            </RequireAdmin>
+          }
+        />
         <Route path="review" element={<ReviewPage />} />
         <Route path="review/:taskId/manual" element={<ManualReviewPage />} />
         <Route path="review/:taskId/edit" element={<ReviewEditPlaceholderPage />} />
@@ -129,7 +136,7 @@ function AppRoutes() {
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/schemes" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

@@ -30,6 +30,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReviewTask, SchemeType } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 
@@ -97,6 +98,8 @@ export default function ReviewPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { message } = AntApp.useApp()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [schemeId, setSchemeId] = useState<number | null>(null)
   const [submitOpen, setSubmitOpen] = useState(false)
   const [fileList, setFileList] = useState<UploadFile[]>([])
@@ -331,6 +334,18 @@ export default function ReviewPage() {
           pagination={DEFAULT_TABLE_PAGINATION}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 72 },
+            ...(isAdmin
+              ? [
+                  {
+                    title: '用户名',
+                    key: 'owner_username',
+                    width: 120,
+                    ellipsis: true,
+                    render: (_: unknown, row: ReviewTask) =>
+                      row.owner_username?.trim() ? row.owner_username : '—',
+                  },
+                ]
+              : []),
             {
               title: '方案类型',
               key: 'scheme',
