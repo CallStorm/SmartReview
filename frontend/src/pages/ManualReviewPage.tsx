@@ -23,6 +23,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReportStep, ReviewReportV1, ReviewTask } from '../api/types'
 import StructureReviewDetail from '../components/StructureReviewDetail'
+import { buildReviewExportFilename } from '../utils/reviewExportFilename'
 
 const STEP_LABELS: Record<string, string> = {
   structure: '结构审核',
@@ -78,7 +79,7 @@ function parseReport(json: string | null | undefined): ReviewReportV1 | null {
   }
 }
 
-async function downloadWordV2(taskId: number): Promise<void> {
+async function downloadWordV2(taskId: number, downloadName: string): Promise<void> {
   const { data } = await api.get<{ url: string }>(
     `/review-tasks/${taskId}/output-download-url`,
   )
@@ -87,7 +88,7 @@ async function downloadWordV2(taskId: number): Promise<void> {
   const blob = await res.blob()
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = 'word_v2.docx'
+  a.download = downloadName
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(a.href)
@@ -122,8 +123,9 @@ export default function ManualReviewPage() {
   const handleExport = async () => {
     if (!task) return
     try {
-      await downloadWordV2(task.id)
-      message.success('已开始下载 word_v2.docx')
+      const name = buildReviewExportFilename(task.original_filename)
+      await downloadWordV2(task.id, name)
+      message.success(`已开始下载 ${name}`)
     } catch {
       message.error('导出失败（可能尚无批注文档）')
     }

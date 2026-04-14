@@ -33,6 +33,7 @@ import type { ReviewTask, SchemeType } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
+import { buildReviewExportFilename } from '../utils/reviewExportFilename'
 
 const statusLabel: Record<string, string> = {
   pending: '排队中',
@@ -79,7 +80,7 @@ function taskStatusCell(row: ReviewTask) {
   return statusTag(row.status)
 }
 
-async function downloadWordV2(taskId: number): Promise<void> {
+async function downloadWordV2(taskId: number, downloadName: string): Promise<void> {
   const { data } = await api.get<{ url: string }>(
     `/review-tasks/${taskId}/output-download-url`,
   )
@@ -88,7 +89,7 @@ async function downloadWordV2(taskId: number): Promise<void> {
   const blob = await res.blob()
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = 'word_v2.docx'
+  a.download = downloadName
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(a.href)
@@ -258,8 +259,9 @@ export default function ReviewPage() {
       return
     }
     try {
-      await downloadWordV2(row.id)
-      message.success('已开始下载 word_v2.docx')
+      const name = buildReviewExportFilename(row.original_filename)
+      await downloadWordV2(row.id, name)
+      message.success(`已开始下载 ${name}`)
     } catch {
       message.error('导出失败')
     }
@@ -373,57 +375,75 @@ export default function ReviewPage() {
             {
               title: '操作',
               key: 'act',
-              width: 460,
-              render: (_, row) => (
-                <Space size="middle" wrap={false}>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<AuditOutlined />}
-                    onClick={() => navigate(`/review/${row.id}/manual`)}
-                  >
-                    人工审阅
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<FileTextOutlined />}
-                    onClick={() => void openReviewLog(row.id)}
-                  >
-                    审核日志
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<ExportOutlined />}
-                    disabled={!row.output_object_key?.trim()}
-                    onClick={() => void handleExport(row)}
-                  >
-                    导出报告
-                  </Button>
-                  <Popconfirm
-                    title="删除该审核任务？"
-                    description="将移除任务记录及已上传的文档，且不可恢复。"
-                    okText="删除"
-                    cancelText="取消"
-                    okButtonProps={{
-                      danger: true,
-                      loading:
-                        deleteMut.isPending && deleteMut.variables === row.id,
-                    }}
-                    onConfirm={() => deleteMut.mutate(row.id)}
-                  >
+              width: isAdmin ? 460 : 220,
+              render: (_, row) => {
+                const taskEnded =
+                  row.status === 'succeeded' || row.status === 'failed'
+                return (
+                  <Space size="middle" wrap={false}>
+                    <Tooltip
+                      title={
+                        taskEnded
+                          ? undefined
+                          : '任务处理结束后（已完成或失败）可进入人工审阅'
+                      }
+                    >
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<AuditOutlined />}
+                        disabled={!taskEnded}
+                        onClick={() => navigate(`/review/${row.id}/manual`)}
+                      >
+                        人工审阅
+                      </Button>
+                    </Tooltip>
+                    {isAdmin ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<FileTextOutlined />}
+                        onClick={() => void openReviewLog(row.id)}
+                      >
+                        审核日志
+                      </Button>
+                    ) : null}
                     <Button
                       type="link"
                       size="small"
-                      danger
-                      icon={<DeleteOutlined />}
+                      icon={<ExportOutlined />}
+                      disabled={!row.output_object_key?.trim()}
+                      onClick={() => void handleExport(row)}
                     >
-                      删除
+                      导出报告
                     </Button>
-                  </Popconfirm>
-                </Space>
-              ),
+                    {isAdmin ? (
+                      <Popconfirm
+                        title="删除该审核任务？"
+                        description="将移除任务记录及已上传的文档，且不可恢复。"
+                        okText="删除"
+                        cancelText="取消"
+                        okButtonProps={{
+                          danger: true,
+                          loading:
+                            deleteMut.isPending &&
+                            deleteMut.variables === row.id,
+                        }}
+                        onConfirm={() => deleteMut.mutate(row.id)}
+                      >
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                        >
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    ) : null}
+                  </Space>
+                )
+              },
             },
           ]}
         />
