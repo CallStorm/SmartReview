@@ -87,11 +87,27 @@ function formatDurationMinutes(durationMs?: number | null): string {
   return (durationMs / 60000).toFixed(1)
 }
 
-function formatTotalTokens(totalTokens?: number | null): string {
-  if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens) || totalTokens < 0) {
+function formatTokenCount(value?: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return '—'
   }
-  return String(totalTokens)
+  return String(value)
+}
+
+function tokensCell(row: ReviewTask, isAdmin: boolean) {
+  if (isAdmin) {
+    return (
+      <div className="review-page__tokens-split">
+        <span>
+          输入 <span className="review-page__tokens-num">{formatTokenCount(row.input_tokens)}</span>
+        </span>
+        <span>
+          输出 <span className="review-page__tokens-num">{formatTokenCount(row.output_tokens)}</span>
+        </span>
+      </div>
+    )
+  }
+  return formatTokenCount(row.total_tokens)
 }
 
 async function downloadWordV2(taskId: number, downloadName: string): Promise<void> {
@@ -396,9 +412,9 @@ export default function ReviewPage() {
             {
               title: '消耗词元',
               key: 'total_tokens',
-              width: 108,
+              width: isAdmin ? 148 : 108,
               align: 'right',
-              render: (_, row) => formatTotalTokens(row.total_tokens),
+              render: (_, row) => tokensCell(row, isAdmin),
             },
             {
               title: '操作',

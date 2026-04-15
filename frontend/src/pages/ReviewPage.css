@@ -80,6 +80,21 @@
   vertical-align: bottom;
 }
 
+.review-page__tokens-split {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.review-page__tokens-num {
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 0, 0, 0.88);
+}
+
 @media (max-width: 576px) {
   .review-page__filename {
     max-width: 160px;
