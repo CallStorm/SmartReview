@@ -204,6 +204,13 @@ export interface DashboardTaskByDay {
   count: number
 }
 
+export interface DashboardTokenByDay {
+  date: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
 export interface DashboardTaskByStatus {
   status: string
   count: number
@@ -244,7 +251,17 @@ export interface DashboardSummary {
   review_tasks_today: number
   active_submitters_7d: number
   completion_rate: number | null
+  tokens_total_all: number
+  input_tokens_total: number
+  output_tokens_total: number
+  tokens_today_total: number
+  input_tokens_today: number
+  output_tokens_today: number
+  tokens_window_total: number
+  input_tokens_window: number
+  output_tokens_window: number
   tasks_per_day: DashboardTaskByDay[]
+  tokens_per_day: DashboardTokenByDay[]
   tasks_by_status: DashboardTaskByStatus[]
   tasks_by_scheme_type: DashboardTaskBySchemeType[]
   dify: DashboardDifyBlock

@@ -30,6 +30,81 @@
   color: rgba(0, 0, 0, 0.55);
 }
 
+.dashboard-wall__section {
+  margin-bottom: 28px;
+}
+
+.dashboard-wall__section:last-of-type {
+  margin-bottom: 0;
+}
+
+.dashboard-wall__section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dashboard-wall__section-icon {
+  font-size: 18px;
+  color: #1677ff;
+}
+
+.dashboard-wall__section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  letter-spacing: 0.02em;
+}
+
+.dashboard-wall__token-hero {
+  background: linear-gradient(145deg, #f0f7ff 0%, #ffffff 48%, #fafbff 100%);
+  border: 1px solid #d6e4ff;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(22, 119, 255, 0.08);
+}
+
+.dashboard-wall__token-hero .ant-card-body {
+  padding: 20px 20px 22px;
+}
+
+.dashboard-wall__token-group {
+  padding: 4px 2px;
+  min-height: 108px;
+}
+
+.dashboard-wall__token-group-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.55);
+  margin-bottom: 8px;
+}
+
+.dashboard-wall__token-main {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.88);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.dashboard-wall__token-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-wall__token-split-sep {
+  color: rgba(0, 0, 0, 0.2);
+  user-select: none;
+}
+
 .dashboard-wall .ant-card {
   background: #fff;
   border: 1px solid #f0f0f0;
