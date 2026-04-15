@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, defer, joinedload
 
@@ -25,7 +25,6 @@ from app.services.onlyoffice import (
     make_file_access_token,
     verify_file_access_token,
 )
-from app.services.review_task_worker import process_scheme_review_task
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 
@@ -77,6 +76,12 @@ def _task_public(
         review_stage=t.review_stage,
         review_result_json=(t.review_result_json if include_result_json else None),
         output_object_key=t.output_object_key,
+        started_at=t.started_at,
+        finished_at=t.finished_at,
+        duration_ms=t.duration_ms,
+        input_tokens=t.input_tokens,
+        output_tokens=t.output_tokens,
+        total_tokens=t.total_tokens,
         review_log=(t.review_log if include_review_log else None),
         debug_prompts=debug_prompts if include_debug_prompts else None,
         original_filename=t.original_filename,
@@ -240,7 +245,6 @@ def download_onlyoffice_document(
 
 @router.post("", response_model=ReviewTaskCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
-    background_tasks: BackgroundTasks,
     scheme_type_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -294,7 +298,5 @@ async def create_task(
     )
     if loaded is None:
         raise HTTPException(status_code=500, detail="创建任务失败")
-
-    background_tasks.add_task(process_scheme_review_task, loaded.id)
 
     return ReviewTaskCreateResponse(task=_task_public(loaded, owner_username=user.username))

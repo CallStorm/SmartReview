@@ -78,12 +78,17 @@ def retrieve_dataset_chunks(
         },
     }
     with httpx.Client(timeout=timeout) as client:
-        resp = client.post(url, headers=headers, json=payload)
-        if resp.status_code >= 400:
-            payload_min: dict[str, Any] = {"query": q[:250]}
-            resp = client.post(url, headers=headers, json=payload_min)
-        resp.raise_for_status()
-        body = resp.json()
+        try:
+            resp = client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                payload_min: dict[str, Any] = {"query": q[:250]}
+                resp = client.post(url, headers=headers, json=payload_min)
+            resp.raise_for_status()
+            body = resp.json()
+        except httpx.TimeoutException as e:
+            raise TimeoutError(f"Dify 检索超时（dataset={dataset_id}, timeout={timeout}s）") from e
+        except httpx.HTTPError as e:
+            raise ValueError(f"Dify 检索失败（dataset={dataset_id}, endpoint={url}）: {e!s}") from e
     parts: list[str] = []
     records = body.get("records")
     if not isinstance(records, list):

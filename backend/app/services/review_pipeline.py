@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import traceback
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from time import perf_counter
 from typing import Any, Literal
 
+import httpx
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import SessionLocal
@@ -26,13 +30,15 @@ from app.services.doc_tree_utils import (
     title_path_for_node,
 )
 from app.services.docx_comments import inject_comments_at_paragraphs
-from app.services.dashboard_settings import get_prompt_debug_enabled
 from app.services.dify_client import retrieve_dataset_chunks
 from app.services.dify_settings import get_dify_url_and_key
-from app.services.llm.chat import chat_json
+from app.services.llm.chat import TokenUsage, chat_json_with_usage
 from app.services.llm.resolve import effective_default_provider
+from app.services.review_settings import get_review_prompt_debug_enabled, get_review_timeout_seconds
 from app.services.tree_align import align_template_user_trees, title_path_str
 from app.services.word_parser import parse_docx_to_tree
+
+LOCK_WAIT_TIMEOUT_SECONDS = 15
 
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
@@ -166,7 +172,9 @@ def _llm_review(
     user_prompt: str,
     anchor_base: dict[str, Any],
     debug_prompts: list[dict[str, Any]] | None = None,
-) -> ReportStep:
+    timeout_seconds: float = 120.0,
+    timeout_fail_fast: bool = False,
+) -> tuple[ReportStep, TokenUsage]:
     if debug_prompts is not None:
         debug_prompts.append(
             {
@@ -179,31 +187,108 @@ def _llm_review(
             }
         )
     try:
-        data = chat_json(db, user_message=user_prompt, system=JSON_SYSTEM, max_tokens=8192)
+        data, usage = chat_json_with_usage(
+            db,
+            user_message=user_prompt,
+            system=JSON_SYSTEM,
+            max_tokens=8192,
+            timeout=timeout_seconds,
+        )
     except Exception as first:
         _append_log(db, task, "warning", f"{step_id} LLM 首次解析失败，重试: {first!s}")
         try:
-            data = chat_json(
+            data, usage = chat_json_with_usage(
                 db,
                 user_message=user_prompt + "\n\n上一输出不是合法 JSON。请只输出一个 JSON 对象，键为 passed, summary, issues。",
                 system=JSON_SYSTEM,
                 max_tokens=8192,
+                timeout=timeout_seconds,
             )
         except Exception as second:
             _append_log(db, task, "error", f"{step_id} LLM 失败: {second!s}")
-            return ReportStep(
-                step_id=step_id,
-                passed=False,
-                summary="模型调用或 JSON 解析失败",
-                issues=[
-                    ReportIssue(
-                        severity="error",
-                        message=str(second),
-                        anchor=anchor_base,
-                    )
-                ],
+            if timeout_fail_fast and _is_timeout_error(second):
+                raise TimeoutError(f"{step_id} 超时（>{int(timeout_seconds)} 秒）") from second
+            return (
+                ReportStep(
+                    step_id=step_id,
+                    passed=False,
+                    summary="模型调用或 JSON 解析失败",
+                    issues=[
+                        ReportIssue(
+                            severity="error",
+                            message=str(second),
+                            anchor=anchor_base,
+                        )
+                    ],
+                ),
+                {"input_tokens": None, "output_tokens": None, "total_tokens": None},
             )
-    return _normalize_llm_step(step_id, data, anchor_base)
+    return _normalize_llm_step(step_id, data, anchor_base), usage
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    text = str(exc).lower()
+    return ("timeout" in text) or ("timed out" in text) or ("超时" in text)
+
+
+def _merge_usage(total: TokenUsage, delta: TokenUsage) -> None:
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        d = delta.get(key)
+        if d is None:
+            continue
+        existing = total.get(key)
+        total[key] = (existing or 0) + d
+
+
+def _write_usage_snapshot(task: SchemeReviewTask, total: TokenUsage) -> None:
+    task.input_tokens = total["input_tokens"] or None
+    task.output_tokens = total["output_tokens"] or None
+    task.total_tokens = total["total_tokens"] or None
+
+
+def _as_utc_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _finalize_timing_and_tokens(task: SchemeReviewTask) -> None:
+    finished = datetime.now(UTC)
+    task.finished_at = finished
+    if task.started_at is not None:
+        started = _as_utc_aware(task.started_at)
+        duration = finished - started
+        task.duration_ms = max(0, int(duration.total_seconds() * 1000))
+
+
+def _recover_stale_processing_tasks(db: Session, *, current_task_id: int, stale_minutes: int = 5) -> int:
+    cutoff = datetime.now(UTC) - timedelta(minutes=stale_minutes)
+    rows = (
+        db.query(SchemeReviewTask)
+        .filter(
+            SchemeReviewTask.status == ReviewTaskStatus.processing,
+            SchemeReviewTask.updated_at < cutoff,
+            SchemeReviewTask.id != current_task_id,
+        )
+        .all()
+    )
+    if not rows:
+        return 0
+    for row in rows:
+        _append_log(
+            db,
+            row,
+            "error",
+            "检测到任务长时间处于 processing，已自动回收为失败（疑似进程中断或提交阶段未完成）",
+        )
+        row.status = ReviewTaskStatus.failed
+        row.review_stage = None
+        row.error_message = "Auto recovered: stale processing task"
+        _finalize_timing_and_tokens(row)
+    db.commit()
+    return len(rows)
 
 
 def _review_result_to_json(
@@ -286,10 +371,30 @@ def run_review_pipeline(task_id: int) -> None:
         if task is None:
             return
 
+        recovered = _recover_stale_processing_tasks(db, current_task_id=task_id, stale_minutes=5)
+        if recovered > 0:
+            task = db.get(SchemeReviewTask, task_id)
+            if task is None:
+                return
+            _append_log(db, task, "warning", f"已自动回收 {recovered} 个僵尸 processing 任务")
+            db.commit()
+
+        try:
+            db.execute(text(f"SET SESSION innodb_lock_wait_timeout = {LOCK_WAIT_TIMEOUT_SECONDS}"))
+        except Exception:
+            # Best-effort safety setting; ignore if backend does not support it.
+            pass
+
         task.status = ReviewTaskStatus.processing
         task.error_message = None
         task.review_stage = None
         task.output_object_key = None
+        task.started_at = datetime.now(UTC)
+        task.finished_at = None
+        task.duration_ms = None
+        task.input_tokens = None
+        task.output_tokens = None
+        task.total_tokens = None
         _append_log(db, task, "info", "任务开始处理")
         db.commit()
 
@@ -323,12 +428,18 @@ def run_review_pipeline(task_id: int) -> None:
         structure_step = _structure_issues_to_report(struct_raw)
 
         provider = effective_default_provider(db)
-        prompt_debug_enabled = get_prompt_debug_enabled(db)
+        prompt_debug_enabled = get_review_prompt_debug_enabled(db)
+        review_timeout_seconds = get_review_timeout_seconds(db)
         debug_prompts: list[dict[str, Any]] = []
         report = ReviewReportV1(
             steps=[structure_step],
             model_provider=provider,
         )
+        token_usage_total: TokenUsage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
 
         if "structure" in active and not structure_step.passed:
             task.review_result_json = _review_result_to_json(
@@ -339,6 +450,7 @@ def run_review_pipeline(task_id: int) -> None:
             task.review_stage = None
             task.error_message = "文档结构与模版不一致"
             task.result_text = structure_step.summary
+            _finalize_timing_and_tokens(task)
             _append_log(db, task, "error", "结构审核未通过，已终止后续步骤")
             db.commit()
             return
@@ -382,7 +494,7 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _basis_prompt(full, basis_rows)
-                    sub = _llm_review(
+                    sub, usage = _llm_review(
                         db,
                         task,
                         step_id=step_id,
@@ -390,6 +502,8 @@ def run_review_pipeline(task_id: int) -> None:
                         anchor_base=anchor,
                         debug_prompts=debug_prompts if prompt_debug_enabled else None,
                     )
+                    _merge_usage(token_usage_total, usage)
+                    _write_usage_snapshot(task, token_usage_total)
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
@@ -428,7 +542,7 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _context_prompt(cur_title, cur_text, ref_blocks)
-                    sub = _llm_review(
+                    sub, usage = _llm_review(
                         db,
                         task,
                         step_id=step_id,
@@ -436,6 +550,8 @@ def run_review_pipeline(task_id: int) -> None:
                         anchor_base=anchor,
                         debug_prompts=debug_prompts if prompt_debug_enabled else None,
                     )
+                    _merge_usage(token_usage_total, usage)
+                    _write_usage_snapshot(task, token_usage_total)
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
@@ -446,6 +562,7 @@ def run_review_pipeline(task_id: int) -> None:
 
             elif step_id == "content":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
+                content_nodes: list[dict[str, Any]] = []
                 for tn in iter_nodes(template_nodes):
                     rp = (tn.get("review_prompt") or "").strip() if isinstance(tn.get("review_prompt"), str) else ""
                     if not rp:
@@ -453,6 +570,35 @@ def run_review_pipeline(task_id: int) -> None:
                     tid = str(tn.get("id") or "")
                     un = resolve_user_node(mapping, tid)
                     if un is None:
+                        continue
+                    content_nodes.append(tn)
+
+                _append_log(
+                    db,
+                    task,
+                    "info",
+                    f"内容审核节点数: {len(content_nodes)}，超时阈值: {review_timeout_seconds} 秒",
+                )
+                db.commit()
+
+                for idx, tn in enumerate(content_nodes, start=1):
+                    node_t0 = perf_counter()
+                    tid = str(tn.get("id") or "")
+                    node_title = title_path_str(title_path_for_node(template_nodes, tid)) or str(
+                        tn.get("title") or ""
+                    )
+                    _append_log(
+                        db,
+                        task,
+                        "info",
+                        f"content 节点开始 [{idx}/{len(content_nodes)}] id={tid} 标题={node_title}",
+                    )
+                    db.commit()
+
+                    un = resolve_user_node(mapping, tid)
+                    if un is None:
+                        _append_log(db, task, "warning", f"content 节点跳过（未匹配用户节点）id={tid}")
+                        db.commit()
                         continue
                     current_text = collect_subtree_text(un)
                     ref_ids = tn.get("ref_node_ids") or []
@@ -473,10 +619,29 @@ def run_review_pipeline(task_id: int) -> None:
                         if not qparts:
                             qparts.append(str(tn.get("title") or "").strip())
                         query = " ".join(qparts)[:250]
+                        kb_t0 = perf_counter()
                         try:
                             kb_text = retrieve_dataset_chunks(dify_url, dify_key, str(ds), query)
                         except Exception as e:
-                            _append_log(db, task, "warning", f"知识库检索跳过: {e!s}")
+                            if _is_timeout_error(e):
+                                raise TimeoutError(
+                                    f"content 节点 [{idx}/{len(content_nodes)}] 知识库检索超时（dataset={ds}）"
+                                ) from e
+                            _append_log(
+                                db,
+                                task,
+                                "warning",
+                                f"content 节点知识库检索跳过 id={tid} dataset={ds}: {e!s}",
+                            )
+                        finally:
+                            kb_elapsed_ms = int((perf_counter() - kb_t0) * 1000)
+                            _append_log(
+                                db,
+                                task,
+                                "info",
+                                f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
+                            )
+                            db.commit()
                     tp = title_path_for_node(template_nodes, tid)
                     hpi = un.get("heading_para_index")
                     anchor = {
@@ -485,27 +650,61 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _content_prompt(current_text, ref_text, kb_text, rp)
-                    sub = _llm_review(
-                        db,
-                        task,
-                        step_id=step_id,
-                        user_prompt=prompt,
-                        anchor_base=anchor,
-                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
-                    )
+                    llm_t0 = perf_counter()
+                    try:
+                        sub, usage = _llm_review(
+                            db,
+                            task,
+                            step_id=step_id,
+                            user_prompt=prompt,
+                            anchor_base=anchor,
+                            debug_prompts=debug_prompts if prompt_debug_enabled else None,
+                            timeout_seconds=float(review_timeout_seconds),
+                            timeout_fail_fast=True,
+                        )
+                    except TimeoutError as e:
+                        raise TimeoutError(
+                            f"content 节点 [{idx}/{len(content_nodes)}] LLM 调用超时（>{review_timeout_seconds}秒）"
+                        ) from e
+                    finally:
+                        llm_elapsed_ms = int((perf_counter() - llm_t0) * 1000)
+                        _append_log(
+                            db,
+                            task,
+                            "info",
+                            f"content 节点模型调用完成 id={tid} 用时={llm_elapsed_ms}ms",
+                        )
+                        db.commit()
+                    _merge_usage(token_usage_total, usage)
+                    _write_usage_snapshot(task, token_usage_total)
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
+                    node_elapsed_ms = int((perf_counter() - node_t0) * 1000)
+                    _append_log(
+                        db,
+                        task,
+                        "info",
+                        (
+                            f"content 节点完成 [{idx}/{len(content_nodes)}] id={tid} "
+                            f"总用时={node_elapsed_ms}ms 累计tokens={task.total_tokens or 0}"
+                        ),
+                    )
+                    db.commit()
                 merged.summary = (
                     "内容审核完成" if merged.passed else f"发现 {len(merged.issues)} 条内容问题"
                 )
                 report.steps.append(merged)
 
         task.review_stage = None
+        _append_log(db, task, "info", "内容审核阶段结束，开始生成审核报告")
+        db.commit()
         task.review_result_json = _review_result_to_json(
             report,
             debug_prompts=debug_prompts if prompt_debug_enabled else None,
         )
+        _append_log(db, task, "info", "审核报告 JSON 生成完成")
+        db.commit()
 
         annotations: list[tuple[int, str]] = []
         for st in report.steps:
@@ -517,27 +716,87 @@ def run_review_pipeline(task_id: int) -> None:
                         txt += f"\n{iss.evidence[:800]}"
                     annotations.append((hpi, txt[:2000]))
 
+        _append_log(db, task, "info", f"收集批注完成，待写入批注数: {len(annotations)}")
+        db.commit()
+
         out_bytes = raw
         if annotations:
+            _append_log(db, task, "info", "开始写入 Word 批注")
+            db.commit()
+            comments_t0 = perf_counter()
             try:
                 out_bytes = inject_comments_at_paragraphs(raw, annotations)
             except Exception as e:
                 _append_log(db, task, "warning", f"写入 Word 批注失败，已保留原文: {e!s}")
+            finally:
+                comments_elapsed_ms = int((perf_counter() - comments_t0) * 1000)
+                _append_log(db, task, "info", f"Word 批注阶段完成，用时={comments_elapsed_ms}ms")
+                db.commit()
+        else:
+            _append_log(db, task, "info", "无可写入批注，跳过 Word 批注阶段")
+            db.commit()
 
         out_key = f"reviews/{task.scheme_type_id}/{uuid.uuid4().hex}_annotated.docx"
-        minio_storage.put_object(
+        _append_log(
+            db,
+            task,
+            "info",
+            f"开始上传审核结果文档（超时阈值: {review_timeout_seconds} 秒）",
+        )
+        db.commit()
+        upload_t0 = perf_counter()
+        minio_storage.put_object_with_hard_timeout(
             out_key,
             out_bytes,
             length=len(out_bytes),
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            timeout_seconds=float(review_timeout_seconds),
+            hard_timeout_seconds=float(review_timeout_seconds) + 8.0,
         )
+        upload_elapsed_ms = int((perf_counter() - upload_t0) * 1000)
         task.output_object_key = out_key
+        _append_log(db, task, "info", f"上传审核结果文档完成，用时={upload_elapsed_ms}ms")
 
+        _append_log(db, task, "info", "开始写入最终任务状态")
         task.status = ReviewTaskStatus.succeeded
+        _write_usage_snapshot(task, token_usage_total)
+        _finalize_timing_and_tokens(task)
         ok = all(s.passed for s in report.steps)
         task.result_text = "审核已完成，批注已写入 Word。" if ok else "审核已完成，存在待处理问题，请查看报告与批注。"
         _append_log(db, task, "info", "任务处理成功")
-        db.commit()
+        try:
+            db.commit()
+        except OperationalError as e:
+            db.rollback()
+            err_text = f"最终状态提交失败（可能锁等待或连接超时）: {e!s}"
+            try:
+                recovery = db.get(SchemeReviewTask, task_id)
+                if recovery is None:
+                    raise TimeoutError(err_text)
+                _append_log(db, recovery, "error", err_text)
+                recovery.status = ReviewTaskStatus.failed
+                recovery.review_stage = None
+                recovery.error_message = err_text
+                _finalize_timing_and_tokens(recovery)
+                db.commit()
+            except Exception as recover_exc:
+                db.rollback()
+                raise TimeoutError(err_text) from recover_exc
+            return
+    except TimeoutError as e:
+        db.rollback()
+        try:
+            task = db.get(SchemeReviewTask, task_id)
+            if task is not None:
+                err_text = str(e)
+                _append_log(db, task, "error", f"处理超时并已终止: {err_text}")
+                task.status = ReviewTaskStatus.failed
+                task.error_message = err_text
+                task.review_stage = None
+                _finalize_timing_and_tokens(task)
+                db.commit()
+        except Exception:
+            db.rollback()
     except Exception as e:
         db.rollback()
         try:
@@ -550,6 +809,7 @@ def run_review_pipeline(task_id: int) -> None:
                 task.status = ReviewTaskStatus.failed
                 task.error_message = err_text
                 task.review_stage = None
+                _finalize_timing_and_tokens(task)
                 db.commit()
         except Exception:
             db.rollback()

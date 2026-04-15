@@ -80,6 +80,20 @@ function taskStatusCell(row: ReviewTask) {
   return statusTag(row.status)
 }
 
+function formatDurationMinutes(durationMs?: number | null): string {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 0) {
+    return '—'
+  }
+  return (durationMs / 60000).toFixed(1)
+}
+
+function formatTotalTokens(totalTokens?: number | null): string {
+  if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens) || totalTokens < 0) {
+    return '—'
+  }
+  return String(totalTokens)
+}
+
 async function downloadWordV2(taskId: number, downloadName: string): Promise<void> {
   const { data } = await api.get<{ url: string }>(
     `/review-tasks/${taskId}/output-download-url`,
@@ -372,6 +386,20 @@ export default function ReviewPage() {
               render: (_, row) => taskStatusCell(row),
             },
             { title: '创建时间', dataIndex: 'created_at', width: 188 },
+            {
+              title: '审核耗时(分钟)',
+              key: 'duration_ms',
+              width: 132,
+              align: 'right',
+              render: (_, row) => formatDurationMinutes(row.duration_ms),
+            },
+            {
+              title: '消耗词元',
+              key: 'total_tokens',
+              width: 108,
+              align: 'right',
+              render: (_, row) => formatTotalTokens(row.total_tokens),
+            },
             {
               title: '操作',
               key: 'act',

@@ -23,6 +23,12 @@ class ReviewTaskPublic(BaseModel):
         description="统一审核报告 JSON；列表接口可为空以减负",
     )
     output_object_key: str | None = Field(default=None, description="带批注的 docx 对象键")
+    started_at: datetime | None = Field(default=None, description="任务实际开始处理时间")
+    finished_at: datetime | None = Field(default=None, description="任务处理结束时间（成功或失败）")
+    duration_ms: int | None = Field(default=None, description="审核耗时（毫秒）")
+    input_tokens: int | None = Field(default=None, description="词元输入量")
+    output_tokens: int | None = Field(default=None, description="词元输出量")
+    total_tokens: int | None = Field(default=None, description="词元总量")
     original_filename: str
     created_at: datetime
     updated_at: datetime

@@ -12,6 +12,7 @@ from app.api import (
     onlyoffice_callback,
     review_tasks,
     settings_dashboard,
+    settings_review,
     scheme_types,
     settings_kb,
     settings_model,
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(review_tasks.router)
     app.include_router(settings_kb.router)
     app.include_router(settings_dashboard.router)
+    app.include_router(settings_review.router)
     app.include_router(settings_onlyoffice.router)
     app.include_router(settings_model.router)
     app.include_router(onlyoffice_callback.router)

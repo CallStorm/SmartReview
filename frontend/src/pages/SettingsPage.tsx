@@ -26,6 +26,7 @@ import type {
   ModelTestResult,
   OnlyofficeSettings,
   ProviderId,
+  ReviewSettings,
 } from '../api/types'
 
 type KbForm = { dify_base_url: string; dify_api_key?: string }
@@ -48,6 +49,10 @@ type OnlyofficeForm = {
 
 type DashboardForm = {
   refresh_interval_minutes: number
+}
+
+type ReviewForm = {
+  review_timeout_seconds: number
   prompt_debug_enabled: boolean
 }
 
@@ -70,6 +75,7 @@ export default function SettingsPage() {
   const [modelForm] = Form.useForm<ModelForm>()
   const [ooForm] = Form.useForm<OnlyofficeForm>()
   const [dashboardForm] = Form.useForm<DashboardForm>()
+  const [reviewForm] = Form.useForm<ReviewForm>()
 
   const { data: kbData, isLoading: kbLoading } = useQuery({
     queryKey: ['settings', 'knowledge-base'],
@@ -99,6 +105,14 @@ export default function SettingsPage() {
     queryKey: ['settings', 'dashboard'],
     queryFn: async () => {
       const { data: row } = await api.get<DashboardSettings>('/settings/dashboard')
+      return row
+    },
+  })
+
+  const { data: reviewData, isLoading: reviewLoading } = useQuery({
+    queryKey: ['settings', 'review'],
+    queryFn: async () => {
+      const { data: row } = await api.get<ReviewSettings>('/settings/review')
       return row
     },
   })
@@ -137,10 +151,18 @@ export default function SettingsPage() {
     if (dashboardData) {
       dashboardForm.setFieldsValue({
         refresh_interval_minutes: dashboardData.refresh_interval_minutes,
-        prompt_debug_enabled: dashboardData.prompt_debug_enabled,
       })
     }
   }, [dashboardData, dashboardForm])
+
+  useEffect(() => {
+    if (reviewData) {
+      reviewForm.setFieldsValue({
+        review_timeout_seconds: reviewData.review_timeout_seconds,
+        prompt_debug_enabled: reviewData.prompt_debug_enabled,
+      })
+    }
+  }, [reviewData, reviewForm])
 
   const saveKbMut = useMutation({
     mutationFn: async (values: KbForm) => {
@@ -214,12 +236,25 @@ export default function SettingsPage() {
     mutationFn: async (values: DashboardForm) => {
       await api.put<DashboardSettings>('/settings/dashboard', {
         refresh_interval_minutes: values.refresh_interval_minutes,
+      })
+    },
+    onSuccess: async () => {
+      message.success('已保存看板统计配置')
+      await qc.invalidateQueries({ queryKey: ['settings', 'dashboard'] })
+    },
+    onError: () => message.error('保存失败'),
+  })
+
+  const saveReviewMut = useMutation({
+    mutationFn: async (values: ReviewForm) => {
+      await api.put<ReviewSettings>('/settings/review', {
+        review_timeout_seconds: values.review_timeout_seconds,
         prompt_debug_enabled: values.prompt_debug_enabled,
       })
     },
     onSuccess: async () => {
-      message.success('已保存看板统计配置（调试开关仅对新任务生效）')
-      await qc.invalidateQueries({ queryKey: ['settings', 'dashboard'] })
+      message.success('已保存审核配置（调试开关仅对新任务生效）')
+      await qc.invalidateQueries({ queryKey: ['settings', 'review'] })
     },
     onError: () => message.error('保存失败'),
   })
@@ -377,6 +412,34 @@ export default function SettingsPage() {
         >
           <InputNumber min={5} max={240} precision={0} style={{ width: 220 }} />
         </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={saveDashboardMut.isPending}>
+            保存
+          </Button>
+        </Form.Item>
+      </Form>
+    </Card>
+  )
+
+  const reviewTab: ReactNode = (
+    <Card title="审核配置" loading={reviewLoading}>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+        配置方案审核运行参数。超时到达阈值时会终止当前任务并标记失败，便于快速排障。
+      </Typography.Paragraph>
+      <Form
+        form={reviewForm}
+        layout="vertical"
+        onFinish={(v) => saveReviewMut.mutate(v)}
+        disabled={saveReviewMut.isPending}
+      >
+        <Form.Item
+          label="审核超时（秒）"
+          name="review_timeout_seconds"
+          rules={[{ required: true, message: '请填写审核超时' }]}
+          extra="建议 30-600 秒；content 节点模型调用超过该值将 fail-fast 终止任务"
+        >
+          <InputNumber min={30} max={600} precision={0} style={{ width: 220 }} />
+        </Form.Item>
         <Form.Item
           label="方案审核提示词调试"
           name="prompt_debug_enabled"
@@ -386,7 +449,7 @@ export default function SettingsPage() {
           <Switch checkedChildren="开启" unCheckedChildren="关闭" />
         </Form.Item>
         <Form.Item>
-          <Button type="primary" htmlType="submit" loading={saveDashboardMut.isPending}>
+          <Button type="primary" htmlType="submit" loading={saveReviewMut.isPending}>
             保存
           </Button>
         </Form.Item>
@@ -595,6 +658,7 @@ export default function SettingsPage() {
             { key: 'kb', label: '知识库', children: knowledgeTab },
             { key: 'model', label: '模型配置', children: modelTab },
             { key: 'dashboard', label: '数据看板', children: dashboardTab },
+            { key: 'review', label: '审核配置', children: reviewTab },
             { key: 'onlyoffice', label: 'OnlyOffice', children: onlyofficeTab },
           ]}
         />

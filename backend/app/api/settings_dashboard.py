@@ -20,7 +20,6 @@ def get_dashboard_settings(
     row = get_or_create_dashboard_settings(db)
     return DashboardSettingsPublic(
         refresh_interval_minutes=int(row.refresh_interval_minutes),
-        prompt_debug_enabled=bool(row.prompt_debug_enabled),
     )
 
 
@@ -32,10 +31,8 @@ def update_dashboard_settings(
 ) -> DashboardSettingsPublic:
     row = get_or_create_dashboard_settings(db)
     row.refresh_interval_minutes = int(body.refresh_interval_minutes)
-    row.prompt_debug_enabled = bool(body.prompt_debug_enabled)
     db.commit()
     db.refresh(row)
     return DashboardSettingsPublic(
         refresh_interval_minutes=int(row.refresh_interval_minutes),
-        prompt_debug_enabled=bool(row.prompt_debug_enabled),
     )

@@ -175,6 +175,12 @@ export interface ReviewTask {
   /** 详情接口返回；列表通常不返回 */
   review_result_json?: string | null
   output_object_key?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  duration_ms?: number | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  total_tokens?: number | null
   /** 列表接口不返回；详情接口返回审核过程日志 */
   review_log?: string | null
   /** 调试开关开启后，仅详情接口返回拼接提示词 */
@@ -246,5 +252,9 @@ export interface DashboardSummary {
 
 export interface DashboardSettings {
   refresh_interval_minutes: number
+}
+
+export interface ReviewSettings {
+  review_timeout_seconds: number
   prompt_debug_enabled: boolean
 }

@@ -10,6 +10,12 @@ engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
     pool_recycle=3600,
+    pool_timeout=15,
+    connect_args={
+        "connect_timeout": 10,
+        "read_timeout": 120,
+        "write_timeout": 120,
+    },
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
