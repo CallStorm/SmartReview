@@ -322,12 +322,31 @@ def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
     )
 
 
-def _context_prompt(current_title: str, current_text: str, ref_blocks: list[tuple[str, str]]) -> str:
+def _context_prompt(
+    current_title: str,
+    current_text: str,
+    ref_blocks: list[tuple[str, str]],
+    consistency_prompt: str | None = None,
+) -> str:
     parts = [f"当前章节：{current_title}\n---\n{current_text[:12000]}\n"]
     for title, text in ref_blocks:
         parts.append(f"对照章节：{title}\n---\n{text[:12000]}\n")
+    body = "\n".join(parts)
+    cp = (consistency_prompt or "").strip()
+    if cp:
+        cp = cp[:8000]
+        return (
+            body
+            + "\n【一致性校验提示词】\n"
+            + f"{cp}\n\n"
+            + "【审核逻辑】\n"
+            + "1. 严格依据【一致性校验提示词】界定比对重点与判定标准；不得凭空增设其中未涉及的无关检查项。\n"
+            + "2. 在当前章节与对照章节之间进行交叉核对。\n"
+            + "3. 输出 JSON：issues 中说明哪两章不一致及原因；related 含 chapter_a、chapter_b，"
+            + "并给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        )
     return (
-        "\n".join(parts)
+        body
         + "\n请检查上述章节在数据、结论、术语、前后要求等方面是否一致。输出 JSON，"
         "issues 中说明哪两章不一致及原因，"
         "related 含 chapter_a、chapter_b，并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
@@ -541,7 +560,9 @@ def run_review_pipeline(task_id: int) -> None:
                         "title_path": tp,
                         "heading_para_index": hpi,
                     }
-                    prompt = _context_prompt(cur_title, cur_text, ref_blocks)
+                    raw_cp = tn.get("context_consistency_prompt")
+                    cp = raw_cp.strip() if isinstance(raw_cp, str) else ""
+                    prompt = _context_prompt(cur_title, cur_text, ref_blocks, cp or None)
                     sub, usage = _llm_review(
                         db,
                         task,

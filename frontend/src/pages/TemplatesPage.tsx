@@ -420,6 +420,15 @@ export default function TemplatesPage() {
                     optionFilterProp="label"
                     showSearch
                   />
+                  <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
+                    可选：填写本节点一致性检查的重点、术语口径、数据字段对应关系等，供模型在比对时遵循
+                  </Typography.Paragraph>
+                  <Input.TextArea
+                    rows={4}
+                    placeholder="例如：重点核对工程量与附件表是否一致；术语「开挖」与「土方开挖」视为同义…"
+                    value={selectedNode.context_consistency_prompt ?? ''}
+                    onChange={(e) => patchSelected({ context_consistency_prompt: e.target.value })}
+                  />
                   <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
                     编制依据
                   </Divider>
