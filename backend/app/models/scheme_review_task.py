@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,6 +20,11 @@ class ReviewTaskStatus(StrEnum):
     processing = "processing"
     succeeded = "succeeded"
     failed = "failed"
+
+
+# Keep generic Text for non-MySQL engines, but use LONGTEXT on MySQL
+# so large JSON reports do not overflow TEXT's 64KB limit.
+review_result_text_type = Text().with_variant(mysql.LONGTEXT(), "mysql")
 
 
 class SchemeReviewTask(Base):
@@ -40,7 +46,7 @@ class SchemeReviewTask(Base):
     output_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     review_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    review_result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_result_json: Mapped[str | None] = mapped_column(review_result_text_type, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
