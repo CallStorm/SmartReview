@@ -118,6 +118,9 @@ def build_editor_config(
             "compactToolbar": True,
             "compactHeader": True,
             "toolbarHideFileName": True,
+            # Ensure users can trigger explicit save, so callback pushes
+            # the latest content before export/download.
+            "forcesave": True,
         },
     }
     if not view_only:

@@ -180,6 +180,14 @@ export default function ReviewEditPlaceholderPage() {
           overflow: 'hidden',
         }}
       >
+        {!viewOnly ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ margin: '8px 12px 0', paddingBlock: 4 }}
+            message="编辑后请先保存（Ctrl+S），再返回导出 Word。"
+          />
+        ) : null}
         {taskLoading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Spin />
