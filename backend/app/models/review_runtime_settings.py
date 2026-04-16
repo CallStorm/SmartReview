@@ -16,6 +16,10 @@ class ReviewRuntimeSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     review_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
     prompt_debug_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    worker_parallel_tasks: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    compilation_basis_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    context_consistency_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    content_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

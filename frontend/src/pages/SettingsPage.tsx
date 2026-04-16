@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -54,6 +55,10 @@ type DashboardForm = {
 type ReviewForm = {
   review_timeout_seconds: number
   prompt_debug_enabled: boolean
+  worker_parallel_tasks: number
+  compilation_basis_concurrency: number
+  context_consistency_concurrency: number
+  content_concurrency: number
 }
 
 function volcengineTestReady(m: ModelProviderSettings | undefined) {
@@ -160,6 +165,10 @@ export default function SettingsPage() {
       reviewForm.setFieldsValue({
         review_timeout_seconds: reviewData.review_timeout_seconds,
         prompt_debug_enabled: reviewData.prompt_debug_enabled,
+        worker_parallel_tasks: reviewData.worker_parallel_tasks,
+        compilation_basis_concurrency: reviewData.compilation_basis_concurrency,
+        context_consistency_concurrency: reviewData.context_consistency_concurrency,
+        content_concurrency: reviewData.content_concurrency,
       })
     }
   }, [reviewData, reviewForm])
@@ -250,10 +259,14 @@ export default function SettingsPage() {
       await api.put<ReviewSettings>('/settings/review', {
         review_timeout_seconds: values.review_timeout_seconds,
         prompt_debug_enabled: values.prompt_debug_enabled,
+        worker_parallel_tasks: values.worker_parallel_tasks,
+        compilation_basis_concurrency: values.compilation_basis_concurrency,
+        context_consistency_concurrency: values.context_consistency_concurrency,
+        content_concurrency: values.content_concurrency,
       })
     },
     onSuccess: async () => {
-      message.success('已保存审核配置（调试开关仅对新任务生效）')
+      message.success('已保存审核配置（调试开关与并发仅对新领取任务生效）')
       await qc.invalidateQueries({ queryKey: ['settings', 'review'] })
     },
     onError: () => message.error('保存失败'),
@@ -423,34 +436,121 @@ export default function SettingsPage() {
 
   const reviewTab: ReactNode = (
     <Card title="审核配置" loading={reviewLoading}>
-      <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-        配置方案审核运行参数。超时到达阈值时会终止当前任务并标记失败，便于快速排障。
+      <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 0 }}>
+        方案审核的运行参数：超时、调试与并发。保存后，超时与调试通常仅对新任务生效；并发在 worker 重新读取配置后对新领取任务生效。
       </Typography.Paragraph>
       <Form
         form={reviewForm}
         layout="vertical"
         onFinish={(v) => saveReviewMut.mutate(v)}
         disabled={saveReviewMut.isPending}
+        style={{ marginTop: 16 }}
       >
-        <Form.Item
-          label="审核超时（秒）"
-          name="review_timeout_seconds"
-          rules={[{ required: true, message: '请填写审核超时' }]}
-          extra="建议 30-600 秒；content 节点模型调用超过该值将 fail-fast 终止任务"
+        <Card
+          type="inner"
+          size="small"
+          title={
+            <Space size={8}>
+              <Typography.Text strong>运行与超时</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontWeight: 400, fontSize: 13 }}>
+                单节点模型调用与上传等阶段的等待上限
+              </Typography.Text>
+            </Space>
+          }
+          styles={{ body: { paddingBottom: 8 } }}
         >
-          <InputNumber min={30} max={600} precision={0} style={{ width: 220 }} />
-        </Form.Item>
-        <Form.Item
-          label="方案审核提示词调试"
-          name="prompt_debug_enabled"
-          valuePropName="checked"
-          extra="开启后会记录每一步最终拼接提示词，仅对开启后新任务生效，用于排查审核行为"
+          <Form.Item
+            label="审核超时（秒）"
+            name="review_timeout_seconds"
+            rules={[{ required: true, message: '请填写审核超时' }]}
+            extra="建议 30～600。内容审核单节点模型调用超过该值将 fail-fast 并终止任务。"
+          >
+            <InputNumber min={30} max={600} precision={0} style={{ width: '100%', maxWidth: 280 }} />
+          </Form.Item>
+        </Card>
+
+        <Card
+          type="inner"
+          size="small"
+          title={<Typography.Text strong>调试</Typography.Text>}
+          style={{ marginTop: 16 }}
+          styles={{ body: { paddingBottom: 8 } }}
         >
-          <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-        </Form.Item>
-        <Form.Item>
+          <Form.Item
+            label="记录每步拼接提示词"
+            name="prompt_debug_enabled"
+            valuePropName="checked"
+            extra="开启后审核结果中附带调试提示词，仅对开启后新提交的任务生效。"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Card>
+
+        <Card
+          type="inner"
+          size="small"
+          title={<Typography.Text strong>并发与吞吐</Typography.Text>}
+          style={{ marginTop: 16 }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 0 }}>
+            数值越大整体越快，但更容易触发上游限流。工作流步骤顺序不变，仅在「编制依据 / 上下文一致性 / 内容」各大类内部并行；范围均为 1～8。
+          </Typography.Paragraph>
+
+          <Divider orientation="left" plain style={{ margin: '16px 0 12px' }}>
+            <Typography.Text type="secondary">任务队列</Typography.Text>
+          </Divider>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 12, fontSize: 13 }}>
+            单个 worker 进程内，同时从队列领取并执行的审核任务数量。
+          </Typography.Paragraph>
+          <Form.Item
+            label="同时处理任务数"
+            name="worker_parallel_tasks"
+            rules={[{ required: true, message: '请填写' }]}
+          >
+            <InputNumber min={1} max={8} precision={0} style={{ width: '100%', maxWidth: 280 }} />
+          </Form.Item>
+
+          <Divider orientation="left" plain style={{ margin: '20px 0 12px' }}>
+            <Typography.Text type="secondary">审核步骤（各大类内）</Typography.Text>
+          </Divider>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 16, fontSize: 13 }}>
+            以下三项分别控制对应审核阶段内、按模版节点拆分的并行度。
+          </Typography.Paragraph>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12} lg={8}>
+              <Form.Item
+                label="编制依据"
+                name="compilation_basis_concurrency"
+                rules={[{ required: true, message: '请填写' }]}
+              >
+                <InputNumber min={1} max={8} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} lg={8}>
+              <Form.Item
+                label="上下文一致性"
+                name="context_consistency_concurrency"
+                rules={[{ required: true, message: '请填写' }]}
+              >
+                <InputNumber min={1} max={8} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} lg={8}>
+              <Form.Item
+                label="内容审核"
+                name="content_concurrency"
+                rules={[{ required: true, message: '请填写' }]}
+              >
+                <InputNumber min={1} max={8} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Card>
+
+        <Divider style={{ margin: '20px 0 16px' }} />
+        <Form.Item style={{ marginBottom: 0 }}>
           <Button type="primary" htmlType="submit" loading={saveReviewMut.isPending}>
-            保存
+            保存审核配置
           </Button>
         </Form.Item>
       </Form>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import UTC, datetime
 
 from sqlalchemy import Select, select
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.scheme_review_task import ReviewTaskStatus, SchemeReviewTask
 from app.services.review_pipeline import run_review_pipeline
+from app.services.review_settings import MAX_PARALLELISM, get_worker_parallel_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -50,23 +52,51 @@ def run_worker_forever(
         "Review worker started (poll_interval=%.1fs)",
         poll_interval_seconds,
     )
-    while True:
-        task_id: int | None = None
-        try:
-            with SessionLocal() as db:
-                task_id = _claim_next_pending_task_id(db)
-        except OperationalError:
-            logger.exception("Failed to claim pending task due to database error")
-        except Exception:
-            logger.exception("Failed to claim pending task")
+    pool = ThreadPoolExecutor(max_workers=MAX_PARALLELISM)
+    inflight: dict[Future, int] = {}
+    try:
+        while True:
+            # Reap completed tasks
+            done_ids = [f for f in list(inflight) if f.done()]
+            for fut in done_ids:
+                tid = inflight.pop(fut)
+                try:
+                    fut.result()
+                except Exception:
+                    logger.exception("Unexpected worker error while processing task #%d", tid)
 
-        if task_id is None:
-            time.sleep(max(0.5, poll_interval_seconds))
-            continue
+            try:
+                with SessionLocal() as db:
+                    limit = get_worker_parallel_tasks(db)
+            except Exception:
+                logger.exception("Failed to read worker_parallel_tasks; defaulting to 1")
+                limit = 1
 
-        logger.info("Start processing task #%d", task_id)
-        try:
-            process_scheme_review_task(task_id)
-        except Exception:
-            # Pipeline already performs failure write-back; keep worker process alive.
-            logger.exception("Unexpected worker error while processing task #%d", task_id)
+            while len(inflight) < limit:
+                try:
+                    with SessionLocal() as db:
+                        task_id = _claim_next_pending_task_id(db)
+                except OperationalError:
+                    logger.exception("Failed to claim pending task due to database error")
+                    break
+                except Exception:
+                    logger.exception("Failed to claim pending task")
+                    break
+
+                if task_id is None:
+                    break
+
+                logger.info("Start processing task #%d", task_id)
+
+                def _run(tid: int) -> None:
+                    process_scheme_review_task(tid)
+
+                fut = pool.submit(_run, task_id)
+                inflight[fut] = task_id
+
+            if not inflight:
+                time.sleep(max(0.5, poll_interval_seconds))
+            else:
+                wait(inflight.keys(), timeout=max(0.5, poll_interval_seconds), return_when=FIRST_COMPLETED)
+    finally:
+        pool.shutdown(wait=True)

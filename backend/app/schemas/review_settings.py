@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
 
-from app.services.review_settings import MAX_REVIEW_TIMEOUT_SECONDS, MIN_REVIEW_TIMEOUT_SECONDS
+from app.services.review_settings import (
+    MAX_PARALLELISM,
+    MAX_REVIEW_TIMEOUT_SECONDS,
+    MIN_PARALLELISM,
+    MIN_REVIEW_TIMEOUT_SECONDS,
+)
 
 
 class ReviewSettingsPublic(BaseModel):
@@ -10,6 +15,10 @@ class ReviewSettingsPublic(BaseModel):
         le=MAX_REVIEW_TIMEOUT_SECONDS,
     )
     prompt_debug_enabled: bool = False
+    worker_parallel_tasks: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    compilation_basis_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    context_consistency_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    content_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
 
 
 class ReviewSettingsUpdate(BaseModel):
@@ -19,3 +28,7 @@ class ReviewSettingsUpdate(BaseModel):
         le=MAX_REVIEW_TIMEOUT_SECONDS,
     )
     prompt_debug_enabled: bool = False
+    worker_parallel_tasks: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    compilation_basis_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    context_consistency_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
+    content_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)

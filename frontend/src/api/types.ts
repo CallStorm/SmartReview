@@ -276,4 +276,8 @@ export interface DashboardSettings {
 export interface ReviewSettings {
   review_timeout_seconds: number
   prompt_debug_enabled: boolean
+  worker_parallel_tasks: number
+  compilation_basis_concurrency: number
+  context_consistency_concurrency: number
+  content_concurrency: number
 }

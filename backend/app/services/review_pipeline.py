@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import httpx
 from sqlalchemy import text
@@ -32,9 +33,15 @@ from app.services.doc_tree_utils import (
 from app.services.docx_comments import inject_comments_at_paragraphs
 from app.services.dify_client import retrieve_dataset_chunks
 from app.services.dify_settings import get_dify_url_and_key
-from app.services.llm.chat import TokenUsage, chat_json_with_usage
+from app.services.llm.chat import EMPTY_USAGE, TokenUsage, chat_json_with_usage
 from app.services.llm.resolve import effective_default_provider
-from app.services.review_settings import get_review_prompt_debug_enabled, get_review_timeout_seconds
+from app.services.review_settings import (
+    get_compilation_basis_concurrency,
+    get_content_concurrency,
+    get_context_consistency_concurrency,
+    get_review_prompt_debug_enabled,
+    get_review_timeout_seconds,
+)
 from app.services.tree_align import align_template_user_trees, title_path_str
 from app.services.word_parser import parse_docx_to_tree
 
@@ -164,28 +171,31 @@ def _normalize_llm_step(
     )
 
 
-def _llm_review(
+LogLine = tuple[str, str]
+
+
+def _llm_review_execute(
     db: Session,
-    task: SchemeReviewTask,
     *,
     step_id: str,
     user_prompt: str,
     anchor_base: dict[str, Any],
-    debug_prompts: list[dict[str, Any]] | None = None,
+    collect_debug: bool,
     timeout_seconds: float = 120.0,
     timeout_fail_fast: bool = False,
-) -> tuple[ReportStep, TokenUsage]:
-    if debug_prompts is not None:
-        debug_prompts.append(
-            {
-                "step_id": step_id,
-                "template_node_id": str(anchor_base.get("template_node_id") or ""),
-                "title_path": anchor_base.get("title_path") or [],
-                "prompt_text": user_prompt,
-                "prompt_length": len(user_prompt),
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-        )
+) -> tuple[ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
+    """LLM JSON 审核（不写入 task.review_log）；日志行由调用方在主线程写入。"""
+    log_lines: list[LogLine] = []
+    debug_entry: dict[str, Any] | None = None
+    if collect_debug:
+        debug_entry = {
+            "step_id": step_id,
+            "template_node_id": str(anchor_base.get("template_node_id") or ""),
+            "title_path": anchor_base.get("title_path") or [],
+            "prompt_text": user_prompt,
+            "prompt_length": len(user_prompt),
+            "created_at": datetime.now(UTC).isoformat(),
+        }
     try:
         data, usage = chat_json_with_usage(
             db,
@@ -195,7 +205,7 @@ def _llm_review(
             timeout=timeout_seconds,
         )
     except Exception as first:
-        _append_log(db, task, "warning", f"{step_id} LLM 首次解析失败，重试: {first!s}")
+        log_lines.append(("warning", f"{step_id} LLM 首次解析失败，重试: {first!s}"))
         try:
             data, usage = chat_json_with_usage(
                 db,
@@ -205,7 +215,7 @@ def _llm_review(
                 timeout=timeout_seconds,
             )
         except Exception as second:
-            _append_log(db, task, "error", f"{step_id} LLM 失败: {second!s}")
+            log_lines.append(("error", f"{step_id} LLM 失败: {second!s}"))
             if timeout_fail_fast and _is_timeout_error(second):
                 raise TimeoutError(f"{step_id} 超时（>{int(timeout_seconds)} 秒）") from second
             return (
@@ -222,8 +232,204 @@ def _llm_review(
                     ],
                 ),
                 {"input_tokens": None, "output_tokens": None, "total_tokens": None},
+                log_lines,
+                debug_entry,
             )
-    return _normalize_llm_step(step_id, data, anchor_base), usage
+    return _normalize_llm_step(step_id, data, anchor_base), usage, log_lines, debug_entry
+
+
+def _llm_review(
+    db: Session,
+    task: SchemeReviewTask,
+    *,
+    step_id: str,
+    user_prompt: str,
+    anchor_base: dict[str, Any],
+    debug_prompts: list[dict[str, Any]] | None = None,
+    timeout_seconds: float = 120.0,
+    timeout_fail_fast: bool = False,
+) -> tuple[ReportStep, TokenUsage]:
+    sub, usage, log_lines, dbg = _llm_review_execute(
+        db,
+        step_id=step_id,
+        user_prompt=user_prompt,
+        anchor_base=anchor_base,
+        collect_debug=debug_prompts is not None,
+        timeout_seconds=timeout_seconds,
+        timeout_fail_fast=timeout_fail_fast,
+    )
+    for level, msg in log_lines:
+        _append_log(db, task, level, msg)
+    if dbg is not None and debug_prompts is not None:
+        debug_prompts.append(dbg)
+    return sub, usage
+
+
+def _bounded_parallel_map(
+    *,
+    concurrency: int,
+    items: list[tuple[int, Any]],
+    worker: Callable[[Any], Any],
+) -> list[tuple[int, Any]]:
+    """按 work index 并行执行，返回 (idx, result) 列表（顺序不保证，由调用方排序）。"""
+    if not items:
+        return []
+    max_workers = max(1, min(int(concurrency), len(items)))
+    out: list[tuple[int, Any]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {pool.submit(worker, payload): idx for idx, payload in items}
+        for fut in as_completed(future_map):
+            idx = future_map[fut]
+            out.append((idx, fut.result()))
+    return out
+
+
+def _content_node_worker(
+    payload: tuple[
+        int,
+        dict[str, Any],
+        list[dict[str, Any]],
+        dict[str, dict[str, Any]],
+        str | None,
+        str | None,
+        int,
+        bool,
+        str,
+        int,
+    ],
+) -> tuple[int, ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
+    """单节点：知识库检索 + LLM；不写入主库，日志行返回给主线程按序写入。"""
+    (
+        work_idx,
+        tn,
+        template_nodes,
+        mapping,
+        dify_url,
+        dify_key,
+        review_timeout_seconds,
+        prompt_debug_enabled,
+        step_id,
+        len_content_nodes,
+    ) = payload
+    logs: list[LogLine] = []
+    node_t0 = perf_counter()
+    tid = str(tn.get("id") or "")
+    rp = (tn.get("review_prompt") or "").strip() if isinstance(tn.get("review_prompt"), str) else ""
+    node_title = title_path_str(title_path_for_node(template_nodes, tid)) or str(tn.get("title") or "")
+    logs.append(
+        (
+            "info",
+            f"content 节点开始 [{work_idx + 1}/{len_content_nodes}] id={tid} 标题={node_title}",
+        )
+    )
+
+    ldb = SessionLocal()
+    try:
+        un = resolve_user_node(mapping, tid)
+        if un is None:
+            logs.append(("warning", f"content 节点跳过（未匹配用户节点）id={tid}"))
+            return (
+                work_idx,
+                ReportStep(step_id=step_id, passed=True, summary="", issues=[]),
+                EMPTY_USAGE,
+                logs,
+                None,
+            )
+
+        current_text = collect_subtree_text(un)
+        ref_ids = tn.get("ref_node_ids") or []
+        ref_chunks: list[str] = []
+        if isinstance(ref_ids, list):
+            for rid in ref_ids:
+                ru = resolve_user_node(mapping, str(rid))
+                if ru is not None:
+                    ref_chunks.append(collect_subtree_text(ru))
+        ref_text = "\n\n---\n\n".join(ref_chunks)
+        kb_text = ""
+        ds = tn.get("dify_dataset_id")
+        if ds and dify_url and dify_key:
+            kws = tn.get("knowledge_keywords") or []
+            qparts: list[str] = []
+            if isinstance(kws, list):
+                qparts.extend(str(x).strip() for x in kws if str(x).strip())
+            if not qparts:
+                qparts.append(str(tn.get("title") or "").strip())
+            query = " ".join(qparts)[:250]
+            kb_t0 = perf_counter()
+            try:
+                kb_text = retrieve_dataset_chunks(dify_url, dify_key, str(ds), query)
+            except Exception as e:
+                if _is_timeout_error(e):
+                    raise TimeoutError(
+                        f"content 节点 [{work_idx + 1}/{len_content_nodes}] 知识库检索超时（dataset={ds}）"
+                    ) from e
+                logs.append(
+                    (
+                        "warning",
+                        f"content 节点知识库检索跳过 id={tid} dataset={ds}: {e!s}",
+                    )
+                )
+            finally:
+                kb_elapsed_ms = int((perf_counter() - kb_t0) * 1000)
+                logs.append(
+                    (
+                        "info",
+                        f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
+                    )
+                )
+        tp = title_path_for_node(template_nodes, tid)
+        hpi = un.get("heading_para_index")
+        anchor = {
+            "template_node_id": tid,
+            "title_path": tp,
+            "heading_para_index": hpi,
+        }
+        prompt = _content_prompt(current_text, ref_text, kb_text, rp)
+        llm_t0 = perf_counter()
+        try:
+            sub, usage, ll_logs, dbg = _llm_review_execute(
+                ldb,
+                step_id=step_id,
+                user_prompt=prompt,
+                anchor_base=anchor,
+                collect_debug=prompt_debug_enabled,
+                timeout_seconds=float(review_timeout_seconds),
+                timeout_fail_fast=True,
+            )
+            logs.extend(ll_logs)
+        except TimeoutError as e:
+            llm_elapsed_ms = int((perf_counter() - llm_t0) * 1000)
+            logs.append(
+                (
+                    "info",
+                    f"content 节点模型调用完成 id={tid} 用时={llm_elapsed_ms}ms",
+                )
+            )
+            raise TimeoutError(
+                f"content 节点 [{work_idx + 1}/{len_content_nodes}] LLM 调用超时（>{review_timeout_seconds}秒）"
+            ) from e
+        else:
+            llm_elapsed_ms = int((perf_counter() - llm_t0) * 1000)
+            logs.append(
+                (
+                    "info",
+                    f"content 节点模型调用完成 id={tid} 用时={llm_elapsed_ms}ms",
+                )
+            )
+
+        node_elapsed_ms = int((perf_counter() - node_t0) * 1000)
+        logs.append(
+            (
+                "info",
+                (
+                    f"content 节点完成 [{work_idx + 1}/{len_content_nodes}] id={tid} "
+                    f"总用时={node_elapsed_ms}ms 累计tokens={{tokens_placeholder}}"
+                ),
+            )
+        )
+        return (work_idx, sub, usage, logs, dbg)
+    finally:
+        ldb.close()
 
 
 def _is_timeout_error(exc: Exception) -> bool:
@@ -449,6 +655,9 @@ def run_review_pipeline(task_id: int) -> None:
         provider = effective_default_provider(db)
         prompt_debug_enabled = get_review_prompt_debug_enabled(db)
         review_timeout_seconds = get_review_timeout_seconds(db)
+        compilation_basis_concurrency = get_compilation_basis_concurrency(db)
+        context_consistency_concurrency = get_context_consistency_concurrency(db)
+        content_concurrency = get_content_concurrency(db)
         debug_prompts: list[dict[str, Any]] = []
         report = ReviewReportV1(
             steps=[structure_step],
@@ -495,6 +704,8 @@ def run_review_pipeline(task_id: int) -> None:
 
             if step_id == "compilation_basis":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
+                basis_work: list[tuple[int, dict[str, Any], str]] = []
+                widx = 0
                 for tn in iter_nodes(template_nodes):
                     if not tn.get("compilation_basis_audit_enabled"):
                         continue
@@ -513,14 +724,37 @@ def run_review_pipeline(task_id: int) -> None:
                         "heading_para_index": hpi,
                     }
                     prompt = _basis_prompt(full, basis_rows)
-                    sub, usage = _llm_review(
-                        db,
-                        task,
-                        step_id=step_id,
-                        user_prompt=prompt,
-                        anchor_base=anchor,
-                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
-                    )
+                    basis_work.append((widx, anchor, prompt))
+                    widx += 1
+
+                def _basis_run(payload: tuple[dict[str, Any], str]) -> Any:
+                    anchor_b, pr = payload
+                    ldb = SessionLocal()
+                    try:
+                        return _llm_review_execute(
+                            ldb,
+                            step_id=step_id,
+                            user_prompt=pr,
+                            anchor_base=anchor_b,
+                            collect_debug=prompt_debug_enabled,
+                            timeout_seconds=120.0,
+                            timeout_fail_fast=False,
+                        )
+                    finally:
+                        ldb.close()
+
+                basis_results = _bounded_parallel_map(
+                    concurrency=compilation_basis_concurrency,
+                    items=[(i, (a, p)) for i, a, p in basis_work],
+                    worker=_basis_run,
+                )
+                basis_results.sort(key=lambda x: x[0])
+                for _, pack in basis_results:
+                    sub, usage, log_lines, dbg = pack
+                    for level, msg in log_lines:
+                        _append_log(db, task, level, msg)
+                    if dbg is not None and debug_prompts is not None:
+                        debug_prompts.append(dbg)
                     _merge_usage(token_usage_total, usage)
                     _write_usage_snapshot(task, token_usage_total)
                     merged.issues.extend(sub.issues)
@@ -533,6 +767,8 @@ def run_review_pipeline(task_id: int) -> None:
 
             elif step_id == "context_consistency":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
+                ctx_work: list[tuple[int, dict[str, Any], str]] = []
+                cidx = 0
                 for tn in iter_nodes(template_nodes):
                     refs = tn.get("context_consistency_ref_node_ids") or []
                     if not isinstance(refs, list) or not refs:
@@ -563,14 +799,37 @@ def run_review_pipeline(task_id: int) -> None:
                     raw_cp = tn.get("context_consistency_prompt")
                     cp = raw_cp.strip() if isinstance(raw_cp, str) else ""
                     prompt = _context_prompt(cur_title, cur_text, ref_blocks, cp or None)
-                    sub, usage = _llm_review(
-                        db,
-                        task,
-                        step_id=step_id,
-                        user_prompt=prompt,
-                        anchor_base=anchor,
-                        debug_prompts=debug_prompts if prompt_debug_enabled else None,
-                    )
+                    ctx_work.append((cidx, anchor, prompt))
+                    cidx += 1
+
+                def _ctx_run(payload: tuple[dict[str, Any], str]) -> Any:
+                    anchor_b, pr = payload
+                    ldb = SessionLocal()
+                    try:
+                        return _llm_review_execute(
+                            ldb,
+                            step_id=step_id,
+                            user_prompt=pr,
+                            anchor_base=anchor_b,
+                            collect_debug=prompt_debug_enabled,
+                            timeout_seconds=120.0,
+                            timeout_fail_fast=False,
+                        )
+                    finally:
+                        ldb.close()
+
+                ctx_results = _bounded_parallel_map(
+                    concurrency=context_consistency_concurrency,
+                    items=[(i, (a, p)) for i, a, p in ctx_work],
+                    worker=_ctx_run,
+                )
+                ctx_results.sort(key=lambda x: x[0])
+                for _, pack in ctx_results:
+                    sub, usage, log_lines, dbg = pack
+                    for level, msg in log_lines:
+                        _append_log(db, task, level, msg)
+                    if dbg is not None and debug_prompts is not None:
+                        debug_prompts.append(dbg)
                     _merge_usage(token_usage_total, usage)
                     _write_usage_snapshot(task, token_usage_total)
                     merged.issues.extend(sub.issues)
@@ -602,115 +861,48 @@ def run_review_pipeline(task_id: int) -> None:
                 )
                 db.commit()
 
-                for idx, tn in enumerate(content_nodes, start=1):
-                    node_t0 = perf_counter()
-                    tid = str(tn.get("id") or "")
-                    node_title = title_path_str(title_path_for_node(template_nodes, tid)) or str(
-                        tn.get("title") or ""
+                content_items = [
+                    (
+                        i,
+                        (
+                            i,
+                            tn,
+                            template_nodes,
+                            mapping,
+                            dify_url,
+                            dify_key,
+                            review_timeout_seconds,
+                            prompt_debug_enabled,
+                            step_id,
+                            len(content_nodes),
+                        ),
                     )
-                    _append_log(
-                        db,
-                        task,
-                        "info",
-                        f"content 节点开始 [{idx}/{len(content_nodes)}] id={tid} 标题={node_title}",
-                    )
-                    db.commit()
-
-                    un = resolve_user_node(mapping, tid)
-                    if un is None:
-                        _append_log(db, task, "warning", f"content 节点跳过（未匹配用户节点）id={tid}")
-                        db.commit()
-                        continue
-                    current_text = collect_subtree_text(un)
-                    ref_ids = tn.get("ref_node_ids") or []
-                    ref_chunks: list[str] = []
-                    if isinstance(ref_ids, list):
-                        for rid in ref_ids:
-                            ru = resolve_user_node(mapping, str(rid))
-                            if ru is not None:
-                                ref_chunks.append(collect_subtree_text(ru))
-                    ref_text = "\n\n---\n\n".join(ref_chunks)
-                    kb_text = ""
-                    ds = tn.get("dify_dataset_id")
-                    if ds and dify_url and dify_key:
-                        kws = tn.get("knowledge_keywords") or []
-                        qparts: list[str] = []
-                        if isinstance(kws, list):
-                            qparts.extend(str(x).strip() for x in kws if str(x).strip())
-                        if not qparts:
-                            qparts.append(str(tn.get("title") or "").strip())
-                        query = " ".join(qparts)[:250]
-                        kb_t0 = perf_counter()
-                        try:
-                            kb_text = retrieve_dataset_chunks(dify_url, dify_key, str(ds), query)
-                        except Exception as e:
-                            if _is_timeout_error(e):
-                                raise TimeoutError(
-                                    f"content 节点 [{idx}/{len(content_nodes)}] 知识库检索超时（dataset={ds}）"
-                                ) from e
-                            _append_log(
-                                db,
-                                task,
-                                "warning",
-                                f"content 节点知识库检索跳过 id={tid} dataset={ds}: {e!s}",
-                            )
-                        finally:
-                            kb_elapsed_ms = int((perf_counter() - kb_t0) * 1000)
-                            _append_log(
-                                db,
-                                task,
-                                "info",
-                                f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
-                            )
-                            db.commit()
-                    tp = title_path_for_node(template_nodes, tid)
-                    hpi = un.get("heading_para_index")
-                    anchor = {
-                        "template_node_id": tid,
-                        "title_path": tp,
-                        "heading_para_index": hpi,
-                    }
-                    prompt = _content_prompt(current_text, ref_text, kb_text, rp)
-                    llm_t0 = perf_counter()
-                    try:
-                        sub, usage = _llm_review(
-                            db,
-                            task,
-                            step_id=step_id,
-                            user_prompt=prompt,
-                            anchor_base=anchor,
-                            debug_prompts=debug_prompts if prompt_debug_enabled else None,
-                            timeout_seconds=float(review_timeout_seconds),
-                            timeout_fail_fast=True,
-                        )
-                    except TimeoutError as e:
-                        raise TimeoutError(
-                            f"content 节点 [{idx}/{len(content_nodes)}] LLM 调用超时（>{review_timeout_seconds}秒）"
-                        ) from e
-                    finally:
-                        llm_elapsed_ms = int((perf_counter() - llm_t0) * 1000)
-                        _append_log(
-                            db,
-                            task,
-                            "info",
-                            f"content 节点模型调用完成 id={tid} 用时={llm_elapsed_ms}ms",
-                        )
-                        db.commit()
+                    for i, tn in enumerate(content_nodes)
+                ]
+                content_results = _bounded_parallel_map(
+                    concurrency=content_concurrency,
+                    items=content_items,
+                    worker=_content_node_worker,
+                )
+                content_results.sort(key=lambda x: x[0])
+                for _, pack in content_results:
+                    _wi, sub, usage, logs, dbg = pack
+                    pending_after_tokens: list[tuple[str, str]] = []
+                    for level, msg in logs:
+                        if "{tokens_placeholder}" in msg:
+                            pending_after_tokens.append((level, msg))
+                        else:
+                            _append_log(db, task, level, msg)
                     _merge_usage(token_usage_total, usage)
                     _write_usage_snapshot(task, token_usage_total)
+                    for level, msg in pending_after_tokens:
+                        msg_out = msg.replace("{tokens_placeholder}", str(task.total_tokens or 0))
+                        _append_log(db, task, level, msg_out)
+                    if dbg is not None and debug_prompts is not None:
+                        debug_prompts.append(dbg)
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
-                    node_elapsed_ms = int((perf_counter() - node_t0) * 1000)
-                    _append_log(
-                        db,
-                        task,
-                        "info",
-                        (
-                            f"content 节点完成 [{idx}/{len(content_nodes)}] id={tid} "
-                            f"总用时={node_elapsed_ms}ms 累计tokens={task.total_tokens or 0}"
-                        ),
-                    )
                     db.commit()
                 merged.summary = (
                     "内容审核完成" if merged.passed else f"发现 {len(merged.issues)} 条内容问题"
