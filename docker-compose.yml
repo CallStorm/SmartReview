@@ -1,8 +1,9 @@
 # SmartReview — Docker Compose
 #
-# 部署前：复制 .env.docker.example 为 .env，填写 HOST_IP（本机对浏览器暴露的 IP，勿用 127.0.0.1
-# 从容器内访问宿主机 MinIO 会失败；局域网访问填如 192.168.x.x），以及 MYSQL_PASSWORD、JWT_SECRET、
-# ONLYOFFICE_JWT_SECRET 等。
+# 部署前：复制 .env.docker.example 为 .env.docker（勿用根目录 .env；本地开发用 backend/.env）。
+# 填写 HOST_IP（本机对浏览器暴露的 IP，勿填 127.0.0.1——否则容器内无法经宿主机访问 MinIO）、
+# MYSQL_PASSWORD、JWT_SECRET、ONLYOFFICE_JWT_SECRET 等。
+# 启动：docker compose --env-file .env.docker up -d --build
 #
 # 浏览器访问：http://HOST_IP（前端 80） / OnlyOffice：http://HOST_IP:9080 / MinIO 控制台：http://HOST_IP:9001
 #
