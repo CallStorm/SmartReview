@@ -1,0 +1,100 @@
+# SmartReview — Docker Compose
+#
+# 部署前：复制 .env.docker.example 为 .env，填写 HOST_IP（本机对浏览器暴露的 IP，勿用 127.0.0.1
+# 从容器内访问宿主机 MinIO 会失败；局域网访问填如 192.168.x.x），以及 MYSQL_PASSWORD、JWT_SECRET、
+# ONLYOFFICE_JWT_SECRET 等。
+#
+# 浏览器访问：http://HOST_IP（前端 80） / OnlyOffice：http://HOST_IP:9080 / MinIO 控制台：http://HOST_IP:9001
+#
+# onlyoffice/documentserver 建议宿主机可用内存约 2–4GB+。
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB:-review}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+    ports:
+      - "9080:80"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB:-review}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: http://${HOST_IP},http://localhost,http://127.0.0.1
+      MINIO_ENDPOINT: ${HOST_IP}:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-review}
+      MINIO_SECURE: "false"
+      ONLYOFFICE_DOCS_URL: http://${HOST_IP}:9080
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+      ONLYOFFICE_CALLBACK_BASE_URL: http://backend:8000
+      ONLYOFFICE_EDITOR_LANG: zh
+      ADMIN_BOOTSTRAP: ${ADMIN_BOOTSTRAP:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PHONE: ${ADMIN_PHONE:-13800000000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:
+  minio_data:
+  onlyoffice_data:
