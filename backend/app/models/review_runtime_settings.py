@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -20,6 +20,11 @@ class ReviewRuntimeSettings(Base):
     compilation_basis_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     context_consistency_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     content_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
+    system_name: Mapped[str] = mapped_column(String(100), nullable=False, default="智能方案审核")
+    brand_logo_object_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    brand_logo_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    favicon_object_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    favicon_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

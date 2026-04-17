@@ -14,6 +14,7 @@ DEFAULT_WORKER_PARALLEL_TASKS = 1
 DEFAULT_COMPILATION_BASIS_CONCURRENCY = 2
 DEFAULT_CONTEXT_CONSISTENCY_CONCURRENCY = 2
 DEFAULT_CONTENT_CONCURRENCY = 4
+DEFAULT_SYSTEM_NAME = "智能方案审核"
 
 
 def _clamp_parallelism(value: int | None, *, default: int) -> int:
@@ -37,6 +38,7 @@ def get_or_create_review_settings(db: Session) -> ReviewRuntimeSettings:
             compilation_basis_concurrency=DEFAULT_COMPILATION_BASIS_CONCURRENCY,
             context_consistency_concurrency=DEFAULT_CONTEXT_CONSISTENCY_CONCURRENCY,
             content_concurrency=DEFAULT_CONTENT_CONCURRENCY,
+            system_name=DEFAULT_SYSTEM_NAME,
         )
         db.add(row)
         db.flush()
@@ -78,3 +80,9 @@ def get_context_consistency_concurrency(db: Session) -> int:
 def get_content_concurrency(db: Session) -> int:
     row = get_or_create_review_settings(db)
     return _clamp_parallelism(row.content_concurrency, default=DEFAULT_CONTENT_CONCURRENCY)
+
+
+def get_system_name(db: Session) -> str:
+    row = get_or_create_review_settings(db)
+    value = (row.system_name or "").strip()
+    return value or DEFAULT_SYSTEM_NAME

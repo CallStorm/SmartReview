@@ -6,6 +6,7 @@ import {
   Col,
   Divider,
   Form,
+  Image,
   Input,
   InputNumber,
   Row,
@@ -15,9 +16,11 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Upload,
 } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, type ReactNode } from 'react'
+import type { UploadFile } from 'antd'
 import { api } from '../api/client'
 import PageShell from '../components/PageShell'
 import type {
@@ -59,6 +62,9 @@ type ReviewForm = {
   compilation_basis_concurrency: number
   context_consistency_concurrency: number
   content_concurrency: number
+  system_name: string
+  logo_file?: UploadFile[]
+  favicon_file?: UploadFile[]
 }
 
 function volcengineTestReady(m: ModelProviderSettings | undefined) {
@@ -71,6 +77,11 @@ function minimaxTestReady(m: ModelProviderSettings | undefined) {
   if (!m) return false
   const x = m.minimax
   return Boolean(x.api_key_configured && x.base_url.trim() && x.model.trim())
+}
+
+function normalizeUploadEvent(event: { fileList?: UploadFile[] } | UploadFile[]) {
+  if (Array.isArray(event)) return event
+  return event?.fileList ?? []
 }
 
 export default function SettingsPage() {
@@ -169,6 +180,9 @@ export default function SettingsPage() {
         compilation_basis_concurrency: reviewData.compilation_basis_concurrency,
         context_consistency_concurrency: reviewData.context_consistency_concurrency,
         content_concurrency: reviewData.content_concurrency,
+        system_name: reviewData.system_name,
+        logo_file: [],
+        favicon_file: [],
       })
     }
   }, [reviewData, reviewForm])
@@ -256,18 +270,33 @@ export default function SettingsPage() {
 
   const saveReviewMut = useMutation({
     mutationFn: async (values: ReviewForm) => {
-      await api.put<ReviewSettings>('/settings/review', {
-        review_timeout_seconds: values.review_timeout_seconds,
-        prompt_debug_enabled: values.prompt_debug_enabled,
-        worker_parallel_tasks: values.worker_parallel_tasks,
-        compilation_basis_concurrency: values.compilation_basis_concurrency,
-        context_consistency_concurrency: values.context_consistency_concurrency,
-        content_concurrency: values.content_concurrency,
+      const formData = new FormData()
+      formData.append('review_timeout_seconds', String(values.review_timeout_seconds))
+      formData.append('prompt_debug_enabled', String(Boolean(values.prompt_debug_enabled)))
+      formData.append('worker_parallel_tasks', String(values.worker_parallel_tasks))
+      formData.append(
+        'compilation_basis_concurrency',
+        String(values.compilation_basis_concurrency),
+      )
+      formData.append(
+        'context_consistency_concurrency',
+        String(values.context_consistency_concurrency),
+      )
+      formData.append('content_concurrency', String(values.content_concurrency))
+      formData.append('system_name', values.system_name.trim())
+      const logoFile = values.logo_file?.[0]?.originFileObj
+      const faviconFile = values.favicon_file?.[0]?.originFileObj
+      if (logoFile) formData.append('logo_file', logoFile)
+      if (faviconFile) formData.append('favicon_file', faviconFile)
+      await api.put<ReviewSettings>('/settings/review', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       })
     },
     onSuccess: async () => {
-      message.success('已保存审核配置（调试开关与并发仅对新领取任务生效）')
+      message.success('已保存审核与品牌配置（调试开关与并发仅对新领取任务生效）')
       await qc.invalidateQueries({ queryKey: ['settings', 'review'] })
+      await qc.invalidateQueries({ queryKey: ['settings', 'review', 'public-branding'] })
+      reviewForm.setFieldsValue({ logo_file: [], favicon_file: [] })
     },
     onError: () => message.error('保存失败'),
   })
@@ -437,7 +466,7 @@ export default function SettingsPage() {
   const reviewTab: ReactNode = (
     <Card title="审核配置" loading={reviewLoading}>
       <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 0 }}>
-        方案审核的运行参数：超时、调试与并发。保存后，超时与调试通常仅对新任务生效；并发在 worker 重新读取配置后对新领取任务生效。
+        这里统一维护系统名称、登录页 / 菜单 logo、浏览器标签图标，以及审核运行参数。保存后，标题与图标会立即更新；超时、调试与并发通常仅对新任务生效。
       </Typography.Paragraph>
       <Form
         form={reviewForm}
@@ -446,6 +475,92 @@ export default function SettingsPage() {
         disabled={saveReviewMut.isPending}
         style={{ marginTop: 16 }}
       >
+        <Card
+          type="inner"
+          size="small"
+          title={<Typography.Text strong>品牌展示</Typography.Text>}
+          styles={{ body: { paddingBottom: 8 } }}
+        >
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Form.Item
+                label="系统名称"
+                name="system_name"
+                rules={[{ required: true, message: '请填写系统名称' }]}
+                extra="登录页主标题与浏览器 tab title 使用此值。"
+              >
+                <Input maxLength={100} placeholder="例如：智能方案审核" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="展示 Logo"
+                name="logo_file"
+                valuePropName="fileList"
+                getValueFromEvent={normalizeUploadEvent}
+                extra="用于登录页和左上角菜单。支持 PNG / JPG / SVG / WEBP，单文件不超过 2MB。"
+              >
+                <Upload beforeUpload={() => false} maxCount={1} accept=".png,.jpg,.jpeg,.svg,.webp" listType="picture">
+                  <Button>选择 Logo</Button>
+                </Upload>
+              </Form.Item>
+              {reviewData?.logo_url ? (
+                <div style={{ marginTop: -8 }}>
+                  <Typography.Text type="secondary">当前 Logo：</Typography.Text>
+                  <div style={{ marginTop: 8 }}>
+                    <Image
+                      src={reviewData.logo_url}
+                      alt={reviewData.system_name}
+                      preview={false}
+                      style={{ maxHeight: 40, width: 'auto', objectFit: 'contain' }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Typography.Text type="secondary">当前使用默认 Logo。</Typography.Text>
+              )}
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="浏览器 Tab 图标"
+                name="favicon_file"
+                valuePropName="fileList"
+                getValueFromEvent={normalizeUploadEvent}
+                extra="用于浏览器标签页。支持 PNG / SVG / ICO / JPG / WEBP，单文件不超过 2MB。"
+              >
+                <Upload
+                  beforeUpload={() => false}
+                  maxCount={1}
+                  accept=".png,.jpg,.jpeg,.svg,.webp,.ico"
+                  listType="picture"
+                >
+                  <Button>选择 Tab 图标</Button>
+                </Upload>
+              </Form.Item>
+              {reviewData?.favicon_url ? (
+                <div style={{ marginTop: -8 }}>
+                  <Typography.Text type="secondary">当前图标：</Typography.Text>
+                  <div style={{ marginTop: 8 }}>
+                    <Image
+                      src={reviewData.favicon_url}
+                      alt="favicon"
+                      preview={false}
+                      width={32}
+                      height={32}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Typography.Text type="secondary">当前使用默认 Tab 图标。</Typography.Text>
+              )}
+            </Col>
+          </Row>
+        </Card>
+
         <Card
           type="inner"
           size="small"
@@ -496,7 +611,7 @@ export default function SettingsPage() {
             数值越大整体越快，但更容易触发上游限流。工作流步骤顺序不变，仅在「编制依据 / 上下文一致性 / 内容」各大类内部并行；范围均为 1～8。
           </Typography.Paragraph>
 
-          <Divider orientation="left" plain style={{ margin: '16px 0 12px' }}>
+          <Divider plain style={{ margin: '16px 0 12px' }}>
             <Typography.Text type="secondary">任务队列</Typography.Text>
           </Divider>
           <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 12, fontSize: 13 }}>
@@ -510,7 +625,7 @@ export default function SettingsPage() {
             <InputNumber min={1} max={8} precision={0} style={{ width: '100%', maxWidth: 280 }} />
           </Form.Item>
 
-          <Divider orientation="left" plain style={{ margin: '20px 0 12px' }}>
+          <Divider plain style={{ margin: '20px 0 12px' }}>
             <Typography.Text type="secondary">审核步骤（各大类内）</Typography.Text>
           </Divider>
           <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 16, fontSize: 13 }}>
@@ -550,7 +665,7 @@ export default function SettingsPage() {
         <Divider style={{ margin: '20px 0 16px' }} />
         <Form.Item style={{ marginBottom: 0 }}>
           <Button type="primary" htmlType="submit" loading={saveReviewMut.isPending}>
-            保存审核配置
+            保存审核与品牌配置
           </Button>
         </Form.Item>
       </Form>
@@ -750,7 +865,7 @@ export default function SettingsPage() {
   return (
     <PageShell
       icon={<SettingOutlined />}
-      description="配置知识库（Dify）、大模型供应商与 OnlyOffice 文档服务，密钥仅保存在服务端。"
+      description="配置品牌展示、知识库（Dify）、大模型供应商与 OnlyOffice 文档服务，密钥仅保存在服务端。"
     >
       <div style={{ maxWidth: 1040 }}>
         <Tabs

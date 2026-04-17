@@ -1,8 +1,10 @@
 import { App as AntApp, Spin } from 'antd'
-import type { ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import AppLayout from './components/AppLayout'
+import { DEFAULT_FAVICON_SRC, DEFAULT_SYSTEM_NAME } from './config/brand'
+import { useBranding } from './hooks/useBranding'
 import BasisPage from './pages/BasisPage'
 import LoginPage from './pages/LoginPage'
 import ManualReviewPage from './pages/ManualReviewPage'
@@ -56,6 +58,19 @@ function DefaultIndexRedirect() {
 
 function AppRoutes() {
   const { user, loading, token } = useAuth()
+  const { branding } = useBranding()
+
+  useEffect(() => {
+    document.title = branding.systemName || DEFAULT_SYSTEM_NAME
+
+    let favicon = document.querySelector<HTMLLinkElement>("link[rel='icon']")
+    if (!favicon) {
+      favicon = document.createElement('link')
+      favicon.rel = 'icon'
+      document.head.appendChild(favicon)
+    }
+    favicon.href = branding.faviconSrc || DEFAULT_FAVICON_SRC
+  }, [branding.faviconSrc, branding.systemName])
 
   return (
     <Routes>

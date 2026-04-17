@@ -280,4 +280,17 @@ export interface ReviewSettings {
   compilation_basis_concurrency: number
   context_consistency_concurrency: number
   content_concurrency: number
+  system_name: string
+  logo_url: string | null
+  favicon_url: string | null
+  logo_configured: boolean
+  favicon_configured: boolean
+}
+
+export interface PublicBrandingSettings {
+  system_name: string
+  logo_url: string | null
+  favicon_url: string | null
+  logo_configured: boolean
+  favicon_configured: boolean
 }

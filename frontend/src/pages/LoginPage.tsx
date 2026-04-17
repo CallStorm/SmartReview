@@ -1,19 +1,22 @@
 import './LoginPage.css'
 
 import { App as AntApp, Button, Form, Input } from 'antd'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { BRAND_LOGO_SRC } from '../config/brand'
+import { useBranding } from '../hooks/useBranding'
 import { formatApiErrorMessage } from '../utils/apiError'
-
-const SYSTEM_NAME = '方案智能审核'
 
 export default function LoginPage() {
   const { login } = useAuth()
+  const { branding } = useBranding()
   const nav = useNavigate()
   const { message } = AntApp.useApp()
   const [logoFailed, setLogoFailed] = useState(false)
+
+  useEffect(() => {
+    setLogoFailed(false)
+  }, [branding.logoSrc])
 
   return (
     <div className="login-page">
@@ -26,7 +29,7 @@ export default function LoginPage() {
                   {!logoFailed ? (
                     <img
                       className="login-page__masthead-logo-img"
-                      src={BRAND_LOGO_SRC}
+                      src={branding.logoSrc}
                       alt=""
                       draggable={false}
                       onError={() => setLogoFailed(true)}
@@ -38,7 +41,7 @@ export default function LoginPage() {
                   )}
                 </div>
                 <span className="login-page__masthead-divider" aria-hidden />
-                <span className="login-page__masthead-name">{SYSTEM_NAME}</span>
+                <span className="login-page__masthead-name">{branding.systemName}</span>
               </header>
 
               <div className="login-page__tabs" role="tablist">

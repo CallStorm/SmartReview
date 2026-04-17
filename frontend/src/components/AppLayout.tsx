@@ -18,7 +18,7 @@ import { Avatar, Button, Layout, Menu } from 'antd'
 import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { BRAND_LOGO_SRC } from '../config/brand'
+import { useBranding } from '../hooks/useBranding'
 import { resolvePageTitle } from '../utils/pageTitle'
 
 const { Header, Sider, Content } = Layout
@@ -36,6 +36,7 @@ function resolveMenuSelectedKey(pathname: string): string {
 
 export default function AppLayout() {
   const { user, logout } = useAuth()
+  const { branding } = useBranding()
   const nav = useNavigate()
   const loc = useLocation()
   const [collapsed, setCollapsed] = useState(false)
@@ -113,8 +114,8 @@ export default function AppLayout() {
             <div className="app-sider-logo-clip">
               <img
                 className="app-sider-logo"
-                src={BRAND_LOGO_SRC}
-                alt="陕建数科"
+                src={branding.logoSrc}
+                alt={branding.systemName}
                 draggable={false}
               />
             </div>
