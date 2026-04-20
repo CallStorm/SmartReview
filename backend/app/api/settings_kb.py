@@ -9,7 +9,7 @@ from app.models.knowledge_base_settings import KnowledgeBaseSettings
 from app.models.user import User
 from app.schemas.knowledge_base import DifyDatasetItem, KnowledgeBasePublic, KnowledgeBaseUpdate
 from app.services.dify_client import list_dataset_catalog
-from app.services.dify_settings import get_dify_url_and_key
+from app.services.dify_settings import get_dify_dataset_name_prefix, get_dify_url_and_key
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -25,7 +25,11 @@ def get_knowledge_base_settings(
     _: User = Depends(require_admin),
 ) -> KnowledgeBasePublic:
     url, configured = _effective_config(db)
-    return KnowledgeBasePublic(dify_base_url=url, api_key_configured=configured)
+    return KnowledgeBasePublic(
+        dify_base_url=url,
+        dify_dataset_name_prefix=get_dify_dataset_name_prefix(db),
+        api_key_configured=configured,
+    )
 
 
 @router.put("/knowledge-base", response_model=KnowledgeBasePublic)
@@ -36,11 +40,12 @@ def update_knowledge_base_settings(
 ) -> KnowledgeBasePublic:
     row = db.query(KnowledgeBaseSettings).order_by(KnowledgeBaseSettings.id).first()
     if row is None:
-        row = KnowledgeBaseSettings(dify_base_url="", dify_api_key="")
+        row = KnowledgeBaseSettings(dify_base_url="", dify_api_key="", dify_dataset_name_prefix="")
         db.add(row)
         db.flush()
 
     row.dify_base_url = body.dify_base_url
+    row.dify_dataset_name_prefix = body.dify_dataset_name_prefix
     if body.dify_api_key is not None and body.dify_api_key.strip():
         row.dify_api_key = body.dify_api_key.strip()
     db.commit()
@@ -51,7 +56,11 @@ def update_knowledge_base_settings(
     key_db = (row.dify_api_key or "").strip()
     key_env = (settings.dify_api_key or "").strip()
     configured = bool(key_db or key_env)
-    return KnowledgeBasePublic(dify_base_url=url, api_key_configured=configured)
+    return KnowledgeBasePublic(
+        dify_base_url=url,
+        dify_dataset_name_prefix=(row.dify_dataset_name_prefix or "").strip(),
+        api_key_configured=configured,
+    )
 
 
 @router.get("/knowledge-base/datasets", response_model=list[DifyDatasetItem])
@@ -61,6 +70,7 @@ def list_dify_datasets(
 ) -> list[DifyDatasetItem]:
     """代理 Dify 知识库列表（使用服务端保存的 Dataset API 配置）。"""
     url, key = get_dify_url_and_key(db)
+    name_prefix = get_dify_dataset_name_prefix(db)
     try:
         rows = list_dataset_catalog(url, key)
     except ValueError as e:
@@ -80,4 +90,6 @@ def list_dify_datasets(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"无法连接 Dify: {e!s}",
         ) from e
+    if name_prefix:
+        rows = [r for r in rows if (r.get("name") or "").startswith(name_prefix)]
     return [DifyDatasetItem(id=r["id"], name=r.get("name") or "") for r in rows]

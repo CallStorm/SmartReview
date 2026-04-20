@@ -33,7 +33,7 @@ import type {
   ReviewSettings,
 } from '../api/types'
 
-type KbForm = { dify_base_url: string; dify_api_key?: string }
+type KbForm = { dify_base_url: string; dify_dataset_name_prefix: string; dify_api_key?: string }
 
 type ModelForm = {
   volcengine_base_url: string
@@ -135,7 +135,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (kbData) {
-      kbForm.setFieldsValue({ dify_base_url: kbData.dify_base_url, dify_api_key: '' })
+      kbForm.setFieldsValue({
+        dify_base_url: kbData.dify_base_url,
+        dify_dataset_name_prefix: kbData.dify_dataset_name_prefix,
+        dify_api_key: '',
+      })
     }
   }, [kbData, kbForm])
 
@@ -189,8 +193,9 @@ export default function SettingsPage() {
 
   const saveKbMut = useMutation({
     mutationFn: async (values: KbForm) => {
-      const payload: { dify_base_url: string; dify_api_key?: string } = {
+      const payload: { dify_base_url: string; dify_dataset_name_prefix: string; dify_api_key?: string } = {
         dify_base_url: values.dify_base_url.trim(),
+        dify_dataset_name_prefix: values.dify_dataset_name_prefix.trim(),
       }
       const k = values.dify_api_key?.trim()
       if (k) payload.dify_api_key = k
@@ -361,6 +366,13 @@ export default function SettingsPage() {
           rules={[{ required: true, message: '请填写服务地址' }]}
         >
           <Input placeholder="例如 http://10.73.2.13/v1" autoComplete="off" />
+        </Form.Item>
+        <Form.Item
+          label="知识库名称前缀过滤"
+          name="dify_dataset_name_prefix"
+          extra="仅展示名称以该前缀开头的知识库。留空表示不过滤。"
+        >
+          <Input placeholder="例如 项目A-" autoComplete="off" />
         </Form.Item>
         <Form.Item label="API 密钥" name="dify_api_key" extra="留空表示不修改已保存的密钥">
           <Input.Password placeholder="dataset-…" autoComplete="new-password" />

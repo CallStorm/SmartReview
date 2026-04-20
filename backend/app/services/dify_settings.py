@@ -21,3 +21,10 @@ def get_dify_url_and_key(db: Session) -> tuple[str, str]:
     if not key_plain:
         key_plain = (settings.dify_api_key or "").strip()
     return url, key_plain
+
+
+def get_dify_dataset_name_prefix(db: Session) -> str:
+    row = db.query(KnowledgeBaseSettings).order_by(KnowledgeBaseSettings.id).first()
+    if row is None:
+        return ""
+    return (row.dify_dataset_name_prefix or "").strip()

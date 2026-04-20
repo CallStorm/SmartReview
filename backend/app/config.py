@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     mysql_user: str = "root"
     mysql_password: str = "rootpassword"
-    mysql_host: str = "127.0.0.1"
+    mysql_host: str = "10.73.2.118"
     mysql_port: int = 3306
     mysql_db: str = "review"
 
@@ -33,9 +33,9 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    minio_endpoint: str = "127.0.0.1:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    minio_endpoint: str = "10.73.2.118:9000"
+    minio_access_key: str = "rag_flow"
+    minio_secret_key: str = "infini_rag_flow"
     minio_bucket: str = "review"
     minio_secure: bool = False
 

@@ -14,6 +14,7 @@ export interface UserListItem extends UserPublic {
 
 export interface KnowledgeBaseSettings {
   dify_base_url: string
+  dify_dataset_name_prefix: string
   api_key_configured: boolean
 }
 
