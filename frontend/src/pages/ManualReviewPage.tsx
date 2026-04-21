@@ -784,6 +784,26 @@ export default function ManualReviewPage() {
                         ),
                       },
                       {
+                        title: '优化建议',
+                        width: 320,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const suggestions = extractAiSuggestions(it.related)
+                          return suggestions.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
+                              {suggestions.map((s, idx) => (
+                                <li key={`${it.issue_id || it.message}-content-${idx}`}>{s}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <Typography.Text type="secondary">
+                              模型未返回整改建议，请在模板提示词中补充「输出 suggestions」。
+                            </Typography.Text>
+                          )
+                        },
+                      },
+                      {
                         title: '严重级别',
                         dataIndex: 'severity',
                         width: 120,
@@ -808,26 +828,6 @@ export default function ManualReviewPage() {
                             >
                               {style.label}
                             </Tag>
-                          )
-                        },
-                      },
-                      {
-                        title: '优化建议',
-                        width: 320,
-                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
-                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
-                        render: (_, it) => {
-                          const suggestions = extractAiSuggestions(it.related)
-                          return suggestions.length > 0 ? (
-                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
-                              {suggestions.map((s, idx) => (
-                                <li key={`${it.issue_id || it.message}-content-${idx}`}>{s}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <Typography.Text type="secondary">
-                              模型未返回整改建议，请在模板提示词中补充「输出 suggestions」。
-                            </Typography.Text>
                           )
                         },
                       },
