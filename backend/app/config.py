@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     mysql_port: int = 3306
     mysql_db: str = "review"
 
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = "40p4jmG0Id_VPCGLsKijqd5FyGpk7aCyG9zjiob5NDw"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
 
