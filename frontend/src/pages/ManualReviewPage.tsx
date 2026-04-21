@@ -97,6 +97,32 @@ function getIssueOriginalText(issue: ReportIssue): string {
   return String(issue.evidence ?? '').trim()
 }
 
+/** 上下文一致性：章节 / 对照章节（优先完整 title_path，如「一、… > 1.…」） */
+function getContextConsistencyChapterPair(issue: ReportIssue): {
+  chapter: string
+  compareChapter: string
+} {
+  const related = issue.related ?? {}
+  const chapterFromPath = asStringArray(issue.anchor?.title_path).join(' > ').trim()
+  const rawA = String(
+    (related as Record<string, unknown>).chapter_a ??
+      (related as Record<string, unknown>).current_chapter ??
+      '',
+  ).trim()
+  const pathB = asStringArray((related as Record<string, unknown>).chapter_b_path)
+  const rawB = String(
+    (related as Record<string, unknown>).chapter_b ??
+      (related as Record<string, unknown>).ref_chapter ??
+      (related as Record<string, unknown>).compare_chapter ??
+      '',
+  ).trim()
+  const compareChapter = (pathB.length ? pathB.join(' > ') : rawB) || '—'
+  return {
+    chapter: chapterFromPath || rawA || '—',
+    compareChapter,
+  }
+}
+
 function getIssueLocation(issue: ReportIssue): {
   chapterText: string
   templateNodeId: string
@@ -555,6 +581,97 @@ export default function ManualReviewPage() {
                             >
                               {style.label}
                             </Tag>
+                          )
+                        },
+                      },
+                    ]}
+                  />
+                </>
+              ) : activeStep.step_id === 'context_consistency' ? (
+                <>
+                  <style>
+                    {`
+                      .context-consistency-review-table .ant-table-thead > tr > th {
+                        background: #F8FAFC !important;
+                        color: #1E293B !important;
+                        font-weight: 700 !important;
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .context-consistency-review-table .ant-table-tbody > tr > td {
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .context-consistency-review-table .ant-table-tbody > tr:hover > td {
+                        background: #F1F5F9 !important;
+                      }
+                    `}
+                  </style>
+                  <Table<ReportIssue>
+                    className="context-consistency-review-table"
+                    style={{
+                      fontFamily:
+                        'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+                    }}
+                    rowKey={(it, idx) => it.issue_id || `${it.message}-${idx}`}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 900 }}
+                    dataSource={activeStep.issues}
+                    columns={[
+                      {
+                        title: '章节',
+                        width: 200,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const { chapter } = getContextConsistencyChapterPair(it)
+                          return (
+                            <Typography.Text style={{ color: '#0F172A', lineHeight: 1.7 }}>
+                              {chapter}
+                            </Typography.Text>
+                          )
+                        },
+                      },
+                      {
+                        title: '对比章节',
+                        width: 200,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const { compareChapter } = getContextConsistencyChapterPair(it)
+                          return (
+                            <Typography.Text style={{ color: '#0F172A', lineHeight: 1.7 }}>
+                              {compareChapter}
+                            </Typography.Text>
+                          )
+                        },
+                      },
+                      {
+                        title: '问题',
+                        dataIndex: 'message',
+                        width: 300,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (v: string) => (
+                          <Typography.Text style={{ color: '#0F172A', lineHeight: 1.7 }}>
+                            {v?.trim() || '—'}
+                          </Typography.Text>
+                        ),
+                      },
+                      {
+                        title: '优化建议',
+                        width: 280,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const suggestions = extractAiSuggestions(it.related)
+                          return suggestions.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
+                              {suggestions.map((s, idx) => (
+                                <li key={`${it.issue_id || it.message}-ctx-${idx}`}>{s}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <Typography.Text type="secondary">模型未返回整改建议</Typography.Text>
                           )
                         },
                       },

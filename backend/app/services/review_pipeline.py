@@ -566,6 +566,39 @@ def _normalize_basis_issue_related(issue: ReportIssue) -> None:
     issue.related = related
 
 
+def _normalize_context_consistency_issue(
+    issue: ReportIssue,
+    *,
+    current_title_path: list[Any],
+    ref_full_paths: list[str],
+) -> None:
+    """将章节展示为完整标题路径（如 一、… > 1.…），并尽量把对照章节解析为模板中的完整路径。"""
+    related = issue.related if isinstance(issue.related, dict) else {}
+    parts = [str(x).strip() for x in current_title_path if str(x).strip()]
+    cur_full = " > ".join(parts)
+    if cur_full:
+        related["chapter_a"] = cur_full
+    raw_b = str(related.get("chapter_b") or "").strip()
+    if raw_b and ref_full_paths:
+        if raw_b in ref_full_paths:
+            related["chapter_b"] = raw_b
+        else:
+            matched: str | None = None
+            for rp in ref_full_paths:
+                if not rp:
+                    continue
+                if raw_b in rp:
+                    matched = rp
+                    break
+                last_seg = rp.split(" > ")[-1].strip()
+                if last_seg and (raw_b == last_seg or last_seg.endswith(raw_b) or raw_b in last_seg):
+                    matched = rp
+                    break
+            if matched:
+                related["chapter_b"] = matched
+    issue.related = related
+
+
 def _context_prompt(
     current_title: str,
     current_text: str,
@@ -587,13 +620,16 @@ def _context_prompt(
             + "1. 严格依据【一致性校验提示词】界定比对重点与判定标准；不得凭空增设其中未涉及的无关检查项。\n"
             + "2. 在当前章节与对照章节之间进行交叉核对。\n"
             + "3. 输出 JSON：issues 中说明哪两章不一致及原因；related 含 chapter_a、chapter_b，"
+            + "chapter_a 与 chapter_b 必须使用与上文「当前章节」「对照章节」标题行一致的完整层级路径，"
+            + "多级标题用「 > 」连接（例如：一、工程概况 > 1.模板支撑体系工程概况和特点），"
             + "并给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
         )
     return (
         body
         + "\n请检查上述章节在数据、结论、术语、前后要求等方面是否一致。输出 JSON，"
         "issues 中说明哪两章不一致及原因，"
-        "related 含 chapter_a、chapter_b，并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        "related 含 chapter_a、chapter_b（均须为完整层级路径，多级用「 > 」连接，与上文章节标题行一致），"
+        "并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
 
 
@@ -807,7 +843,7 @@ def run_review_pipeline(task_id: int) -> None:
 
             elif step_id == "context_consistency":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
-                ctx_work: list[tuple[int, dict[str, Any], str]] = []
+                ctx_work: list[tuple[int, dict[str, Any], str, list[str]]] = []
                 cidx = 0
                 for tn in iter_nodes(template_nodes):
                     refs = tn.get("context_consistency_ref_node_ids") or []
@@ -839,7 +875,8 @@ def run_review_pipeline(task_id: int) -> None:
                     raw_cp = tn.get("context_consistency_prompt")
                     cp = raw_cp.strip() if isinstance(raw_cp, str) else ""
                     prompt = _context_prompt(cur_title, cur_text, ref_blocks, cp or None)
-                    ctx_work.append((cidx, anchor, prompt))
+                    ref_path_strings = [str(rb[0]).strip() for rb in ref_blocks if str(rb[0]).strip()]
+                    ctx_work.append((cidx, anchor, prompt, ref_path_strings))
                     cidx += 1
 
                 def _ctx_run(payload: tuple[dict[str, Any], str]) -> Any:
@@ -860,11 +897,11 @@ def run_review_pipeline(task_id: int) -> None:
 
                 ctx_results = _bounded_parallel_map(
                     concurrency=context_consistency_concurrency,
-                    items=[(i, (a, p)) for i, a, p in ctx_work],
+                    items=[(i, (a, p)) for i, a, p, _rfs in ctx_work],
                     worker=_ctx_run,
                 )
                 ctx_results.sort(key=lambda x: x[0])
-                for _, pack in ctx_results:
+                for i, (_, pack) in enumerate(ctx_results):
                     sub, usage, log_lines, dbg = pack
                     for level, msg in log_lines:
                         _append_log(db, task, level, msg)
@@ -872,6 +909,15 @@ def run_review_pipeline(task_id: int) -> None:
                         debug_prompts.append(dbg)
                     _merge_usage(token_usage_total, usage)
                     _write_usage_snapshot(task, token_usage_total)
+                    _anchor = ctx_work[i][1]
+                    _ref_paths = ctx_work[i][3]
+                    _tp = _anchor.get("title_path") if isinstance(_anchor.get("title_path"), list) else []
+                    for issue in sub.issues:
+                        _normalize_context_consistency_issue(
+                            issue,
+                            current_title_path=_tp,
+                            ref_full_paths=_ref_paths,
+                        )
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
