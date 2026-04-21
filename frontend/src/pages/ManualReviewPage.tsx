@@ -678,6 +678,134 @@ export default function ManualReviewPage() {
                     ]}
                   />
                 </>
+              ) : activeStep.step_id === 'content' ? (
+                <>
+                  <style>
+                    {`
+                      .content-review-table .ant-table-thead > tr > th {
+                        background: #F8FAFC !important;
+                        color: #1E293B !important;
+                        font-weight: 700 !important;
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .content-review-table .ant-table-tbody > tr > td {
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .content-review-table .ant-table-tbody > tr:hover > td {
+                        background: #F1F5F9 !important;
+                      }
+                    `}
+                  </style>
+                  <Table<ReportIssue>
+                    className="content-review-table"
+                    style={{
+                      fontFamily:
+                        'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+                    }}
+                    rowKey={(it, idx) => it.issue_id || `${it.message}-${idx}`}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 1150 }}
+                    dataSource={activeStep.issues}
+                    columns={[
+                      {
+                        title: '当前章节',
+                        width: 280,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const loc = getIssueLocation(it)
+                          return (
+                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                              <Typography.Text
+                                style={{
+                                  color: '#0F172A',
+                                  lineHeight: 1.7,
+                                  whiteSpace: 'normal',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {loc.chapterText?.trim() || '—'}
+                              </Typography.Text>
+                              {loc.userTitle ? (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  文档标题：{loc.userTitle}
+                                </Typography.Text>
+                              ) : null}
+                            </Space>
+                          )
+                        },
+                      },
+                      {
+                        title: '问题',
+                        dataIndex: 'message',
+                        width: 360,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (v: string) => (
+                          <Typography.Text
+                            style={{
+                              color: '#0F172A',
+                              lineHeight: 1.7,
+                              whiteSpace: 'normal',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {v?.trim() || '—'}
+                          </Typography.Text>
+                        ),
+                      },
+                      {
+                        title: '严重级别',
+                        dataIndex: 'severity',
+                        width: 120,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (severity: string) => {
+                          const style = SEVERITY_TAG_STYLES[severity] ?? {
+                            bg: '#E2E8F0',
+                            text: '#334155',
+                            label: severity,
+                          }
+                          return (
+                            <Tag
+                              style={{
+                                background: style.bg,
+                                color: style.text,
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '2px 10px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {style.label}
+                            </Tag>
+                          )
+                        },
+                      },
+                      {
+                        title: '优化建议',
+                        width: 320,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const suggestions = extractAiSuggestions(it.related)
+                          return suggestions.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
+                              {suggestions.map((s, idx) => (
+                                <li key={`${it.issue_id || it.message}-content-${idx}`}>{s}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <Typography.Text type="secondary">
+                              模型未返回整改建议，请在模板提示词中补充「输出 suggestions」。
+                            </Typography.Text>
+                          )
+                        },
+                      },
+                    ]}
+                  />
+                </>
               ) : (
                 <List
                   dataSource={activeStep.issues}
