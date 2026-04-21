@@ -614,7 +614,7 @@ export default function ManualReviewPage() {
                     rowKey={(it, idx) => it.issue_id || `${it.message}-${idx}`}
                     pagination={false}
                     size="small"
-                    scroll={{ x: 900 }}
+                    scroll={{ x: 1020 }}
                     dataSource={activeStep.issues}
                     columns={[
                       {
@@ -672,6 +672,34 @@ export default function ManualReviewPage() {
                             </ul>
                           ) : (
                             <Typography.Text type="secondary">模型未返回整改建议</Typography.Text>
+                          )
+                        },
+                      },
+                      {
+                        title: '严重级别',
+                        dataIndex: 'severity',
+                        width: 120,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (severity: string) => {
+                          const style = SEVERITY_TAG_STYLES[severity] ?? {
+                            bg: '#E2E8F0',
+                            text: '#334155',
+                            label: severity,
+                          }
+                          return (
+                            <Tag
+                              style={{
+                                background: style.bg,
+                                color: style.text,
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '2px 10px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {style.label}
+                            </Tag>
                           )
                         },
                       },
