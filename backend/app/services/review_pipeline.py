@@ -47,6 +47,14 @@ from app.services.word_parser import parse_docx_to_tree
 
 LOCK_WAIT_TIMEOUT_SECONDS = 15
 
+# 写入 Word 批注时使用的步骤中文标签（与前端展示用语一致）
+WORD_COMMENT_STEP_LABEL_CN: dict[str, str] = {
+    "structure": "结构审核",
+    "compilation_basis": "编制依据审核",
+    "context_consistency": "上下文一致性",
+    "content": "内容审核",
+}
+
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
 {
@@ -1010,7 +1018,8 @@ def run_review_pipeline(task_id: int) -> None:
             for iss in st.issues:
                 hpi = (iss.anchor or {}).get("heading_para_index")
                 if isinstance(hpi, int):
-                    txt = f"[{st.step_id}] {iss.message}"
+                    step_label = WORD_COMMENT_STEP_LABEL_CN.get(st.step_id, st.step_id)
+                    txt = f"({step_label}) {iss.message}"
                     if iss.evidence:
                         txt += f"\n{iss.evidence[:800]}"
                     annotations.append((hpi, txt[:2000]))
