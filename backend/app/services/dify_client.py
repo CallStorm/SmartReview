@@ -236,6 +236,7 @@ def collect_dify_kb_metrics(
     base_url: str,
     api_key: str,
     *,
+    dataset_name_prefix: str = "",
     max_documents_per_dataset: int = 400,
     max_segment_lookups_total: int = 2500,
     max_workers: int = 6,
@@ -256,6 +257,9 @@ def collect_dify_kb_metrics(
             segment_total=0,
             error=f"Dify 请求失败: {e!s}",
         )
+    name_prefix = (dataset_name_prefix or "").strip()
+    if name_prefix:
+        datasets = [ds for ds in datasets if (ds.get("name") or "").startswith(name_prefix)]
 
     metrics_list: list[DifyDatasetKbMetric] = []
     segment_total = 0

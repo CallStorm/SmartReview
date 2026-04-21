@@ -14,6 +14,7 @@ import {
   List,
   Space,
   Spin,
+  Table,
   Tag,
   Typography,
 } from 'antd'
@@ -21,7 +22,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ReportStep, ReviewReportV1, ReviewSettings, ReviewTask } from '../api/types'
+import type { ReportIssue, ReportStep, ReviewReportV1, ReviewSettings, ReviewTask } from '../api/types'
 import StructureReviewDetail from '../components/StructureReviewDetail'
 import { buildReviewExportFilename } from '../utils/reviewExportFilename'
 
@@ -36,6 +37,27 @@ const SEVERITY_META: Record<string, { label: string; color: string }> = {
   error: { label: '严重', color: 'red' },
   warning: { label: '警告', color: 'gold' },
   info: { label: '提示', color: 'blue' },
+}
+
+const MODERN_TABLE_HEADER_STYLE = {
+  background: '#F8FAFC',
+  color: '#1E293B',
+  fontWeight: 700,
+  fontFamily:
+    'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+}
+
+const MODERN_TABLE_CELL_STYLE = {
+  padding: '14px 16px',
+  borderBottom: '1px solid #F1F5F9',
+  fontFamily:
+    'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+}
+
+const SEVERITY_TAG_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  error: { bg: '#FEE2E2', text: '#991B1B', label: '严重' },
+  warning: { bg: '#FEF3C7', text: '#92400E', label: '警告' },
+  info: { bg: '#DBEAFE', text: '#1E3A8A', label: '提示' },
 }
 
 function asStringArray(v: unknown): string[] {
@@ -66,6 +88,48 @@ function extractAiSuggestions(related: Record<string, unknown> | undefined): str
   pushText(related.optimize_suggestion)
   pushText(related.optimization_suggestion)
   return Array.from(new Set(out))
+}
+
+function getIssueOriginalText(issue: ReportIssue): string {
+  const related = issue.related
+  const normalized = String(related?.original_text ?? '').trim()
+  if (normalized) return normalized
+  return String(issue.evidence ?? '').trim()
+}
+
+function getIssueLocation(issue: ReportIssue): {
+  chapterText: string
+  templateNodeId: string
+  headingParaIndex: string
+  userTitle: string
+} {
+  const related = issue.related
+  const locationRaw = related?.location
+  const location = typeof locationRaw === 'object' && locationRaw ? locationRaw : undefined
+  const chapterPathRaw = Array.isArray((location as Record<string, unknown> | undefined)?.chapter_path)
+    ? (((location as Record<string, unknown>).chapter_path as unknown[]) ?? [])
+    : asStringArray(issue.anchor?.title_path)
+  const chapterPath = chapterPathRaw.map((x) => String(x ?? '').trim()).filter(Boolean)
+  const chapterText = String((location as Record<string, unknown> | undefined)?.chapter_text ?? '').trim()
+  const templateNodeId = String(
+    (location as Record<string, unknown> | undefined)?.template_node_id ??
+      issue.anchor?.template_node_id ??
+      '',
+  ).trim()
+  const headingParaIndex = String(
+    (location as Record<string, unknown> | undefined)?.heading_para_index ??
+      issue.anchor?.heading_para_index ??
+      '',
+  ).trim()
+  const userTitle = String(
+    (location as Record<string, unknown> | undefined)?.user_title ?? issue.anchor?.user_title ?? '',
+  ).trim()
+  return {
+    chapterText: chapterText || chapterPath.join(' > '),
+    templateNodeId,
+    headingParaIndex,
+    userTitle,
+  }
 }
 
 function parseReport(json: string | null | undefined): ReviewReportV1 | null {
@@ -374,6 +438,129 @@ export default function ManualReviewPage() {
               <Typography.Title level={5}>问题列表</Typography.Title>
               {activeStep.issues.length === 0 ? (
                 <Typography.Text type="secondary">本步骤无问题项</Typography.Text>
+              ) : activeStep.step_id === 'compilation_basis' ? (
+                <>
+                  <style>
+                    {`
+                      .basis-review-table .ant-table-thead > tr > th {
+                        background: #F8FAFC !important;
+                        color: #1E293B !important;
+                        font-weight: 700 !important;
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .basis-review-table .ant-table-tbody > tr > td {
+                        border-bottom: 1px solid #F1F5F9 !important;
+                      }
+                      .basis-review-table .ant-table-tbody > tr:hover > td {
+                        background: #F1F5F9 !important;
+                      }
+                    `}
+                  </style>
+                  <Table<ReportIssue>
+                    className="basis-review-table"
+                    style={{
+                      fontFamily:
+                        'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+                    }}
+                    rowKey={(it, idx) => it.issue_id || `${it.message}-${idx}`}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 1100 }}
+                    dataSource={activeStep.issues}
+                    columns={[
+                      {
+                        title: '问题',
+                        dataIndex: 'message',
+                        width: 260,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (v: string) => (
+                          <Typography.Text style={{ color: '#0F172A', lineHeight: 1.7 }}>
+                            {v || '-'}
+                          </Typography.Text>
+                        ),
+                      },
+                      {
+                        title: '原文',
+                        width: 420,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const originalText = getIssueOriginalText(it)
+                          const location = getIssueLocation(it)
+                          return (
+                            <Space direction="vertical" size={8} style={{ width: '100%', maxWidth: 420 }}>
+                              <Typography.Text strong style={{ color: '#0F172A' }}>
+                                {location.chapterText || '未定位到明确章节'}
+                              </Typography.Text>
+                              {location.userTitle ? (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  文档标题：{location.userTitle}
+                                </Typography.Text>
+                              ) : null}
+                              <Typography.Text
+                                style={{
+                                  color: '#64748B',
+                                  lineHeight: 1.75,
+                                  whiteSpace: 'normal',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {originalText || '未提取到原文'}
+                              </Typography.Text>
+                            </Space>
+                          )
+                        },
+                      },
+                      {
+                        title: '修改建议',
+                        width: 270,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (_, it) => {
+                          const suggestions = extractAiSuggestions(it.related)
+                          return suggestions.length > 0 ? (
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
+                              {suggestions.map((s, idx) => (
+                                <li key={`${it.issue_id || it.message}-t-${idx}`}>{s}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <Typography.Text type="secondary">模型未返回整改建议</Typography.Text>
+                          )
+                        },
+                      },
+                      {
+                        title: '严重级别',
+                        dataIndex: 'severity',
+                        width: 120,
+                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                        render: (severity: string) => {
+                          const style = SEVERITY_TAG_STYLES[severity] ?? {
+                            bg: '#E2E8F0',
+                            text: '#334155',
+                            label: severity,
+                          }
+                          return (
+                            <Tag
+                              style={{
+                                background: style.bg,
+                                color: style.text,
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '2px 10px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {style.label}
+                            </Tag>
+                          )
+                        },
+                      },
+                    ]}
+                  />
+                </>
               ) : (
                 <List
                   dataSource={activeStep.issues}

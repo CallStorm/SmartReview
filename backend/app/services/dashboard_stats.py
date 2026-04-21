@@ -22,7 +22,7 @@ from app.schemas.admin_dashboard import (
     TokenCountByDayItem,
 )
 from app.services.dify_client import collect_dify_kb_metrics
-from app.services.dify_settings import get_dify_url_and_key
+from app.services.dify_settings import get_dify_dataset_name_prefix, get_dify_url_and_key
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -56,10 +56,11 @@ def _empty_dify_block(*, configured: bool, error: str | None = None) -> DifyDash
 
 def _load_dify_block(db: Session) -> DifyDashboardBlock:
     url, key = get_dify_url_and_key(db)
+    dataset_name_prefix = get_dify_dataset_name_prefix(db)
     if not url.strip() or not key.strip():
         return _empty_dify_block(configured=False)
 
-    cache_key = f"{url.strip()}|{len(key)}"
+    cache_key = f"{url.strip()}|{len(key)}|{dataset_name_prefix}"
     now = time.monotonic()
     hit = _DIFY_CACHE.get("until")
     if (
@@ -70,7 +71,7 @@ def _load_dify_block(db: Session) -> DifyDashboardBlock:
     ):
         return _DIFY_CACHE["block"]  # type: ignore[return-value]
 
-    m = collect_dify_kb_metrics(url, key)
+    m = collect_dify_kb_metrics(url, key, dataset_name_prefix=dataset_name_prefix)
     block = DifyDashboardBlock(
         configured=m.configured,
         dataset_count=m.dataset_count,

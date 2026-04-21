@@ -528,6 +528,44 @@ def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
     )
 
 
+def _normalize_basis_issue_related(issue: ReportIssue) -> None:
+    related = issue.related if isinstance(issue.related, dict) else {}
+    anchor = issue.anchor if isinstance(issue.anchor, dict) else {}
+
+    suggestions: list[str] = []
+    raw_suggestions = related.get("suggestions")
+    if isinstance(raw_suggestions, list):
+        suggestions.extend(str(x).strip() for x in raw_suggestions if str(x).strip())
+    for key in ("suggestion", "optimize_suggestion", "optimization_suggestion"):
+        text = str(related.get(key) or "").strip()
+        if text:
+            suggestions.append(text)
+    deduped_suggestions: list[str] = []
+    for item in suggestions:
+        if item not in deduped_suggestions:
+            deduped_suggestions.append(item)
+    related["suggestions"] = deduped_suggestions
+
+    related["original_text"] = str(related.get("original_text") or issue.evidence or "").strip()
+
+    chapter_path_raw = anchor.get("title_path")
+    chapter_path = [str(x).strip() for x in chapter_path_raw] if isinstance(chapter_path_raw, list) else []
+    chapter_path = [x for x in chapter_path if x]
+    template_node_id = str(anchor.get("template_node_id") or "").strip()
+    user_title = str(anchor.get("user_title") or "").strip()
+    heading_para_index_raw = anchor.get("heading_para_index")
+    heading_para_index = heading_para_index_raw if isinstance(heading_para_index_raw, int) else None
+    related["location"] = {
+        "chapter_path": chapter_path,
+        "chapter_text": " > ".join(chapter_path),
+        "template_node_id": template_node_id,
+        "heading_para_index": heading_para_index,
+        "user_title": user_title,
+    }
+
+    issue.related = related
+
+
 def _context_prompt(
     current_title: str,
     current_text: str,
@@ -757,6 +795,8 @@ def run_review_pipeline(task_id: int) -> None:
                         debug_prompts.append(dbg)
                     _merge_usage(token_usage_total, usage)
                     _write_usage_snapshot(task, token_usage_total)
+                    for issue in sub.issues:
+                        _normalize_basis_issue_related(issue)
                     merged.issues.extend(sub.issues)
                     if not sub.passed:
                         merged.passed = False
