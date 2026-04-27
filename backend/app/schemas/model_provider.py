@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-ProviderId = Literal["volcengine", "minimax"]
+ProviderId = Literal["volcengine", "minimax", "deepseek"]
 LlmApiProtocol = Literal["openai_compatible", "anthropic"]
 
 
@@ -22,10 +22,18 @@ class MinimaxPublic(BaseModel):
     api_key_configured: bool
 
 
+class DeepseekPublic(BaseModel):
+    api_protocol: Literal["openai_compatible"] = "openai_compatible"
+    base_url: str
+    model: str
+    api_key_configured: bool
+
+
 class ModelProviderPublic(BaseModel):
     default_provider: ProviderId | None
     volcengine: VolcenginePublic
     minimax: MinimaxPublic
+    deepseek: DeepseekPublic
 
 
 class ModelProviderUpdate(BaseModel):
@@ -41,12 +49,17 @@ class ModelProviderUpdate(BaseModel):
     minimax_base_url: str | None = None
     minimax_api_key: str | None = Field(default=None, description="新密钥；不传或空表示不修改")
     minimax_model: str | None = None
+    deepseek_base_url: str | None = None
+    deepseek_api_key: str | None = Field(default=None, description="新密钥；不传或空表示不修改")
+    deepseek_model: str | None = None
 
     @field_validator(
         "volcengine_base_url",
         "volcengine_endpoint_id",
         "minimax_base_url",
         "minimax_model",
+        "deepseek_base_url",
+        "deepseek_model",
         mode="before",
     )
     @classmethod

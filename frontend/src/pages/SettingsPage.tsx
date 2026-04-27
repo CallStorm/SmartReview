@@ -42,6 +42,9 @@ type ModelForm = {
   minimax_base_url: string
   minimax_api_key?: string
   minimax_model: string
+  deepseek_base_url: string
+  deepseek_api_key?: string
+  deepseek_model: string
 }
 
 type OnlyofficeForm = {
@@ -77,6 +80,12 @@ function minimaxTestReady(m: ModelProviderSettings | undefined) {
   if (!m) return false
   const x = m.minimax
   return Boolean(x.api_key_configured && x.base_url.trim() && x.model.trim())
+}
+
+function deepseekTestReady(m: ModelProviderSettings | undefined) {
+  if (!m) return false
+  const d = m.deepseek
+  return Boolean(d.api_key_configured && d.base_url.trim() && d.model.trim())
 }
 
 function normalizeUploadEvent(event: { fileList?: UploadFile[] } | UploadFile[]) {
@@ -152,6 +161,9 @@ export default function SettingsPage() {
         minimax_base_url: modelData.minimax.base_url,
         minimax_api_key: '',
         minimax_model: modelData.minimax.model,
+        deepseek_base_url: modelData.deepseek.base_url,
+        deepseek_api_key: '',
+        deepseek_model: modelData.deepseek.model,
       })
     }
   }, [modelData, modelForm])
@@ -215,11 +227,15 @@ export default function SettingsPage() {
         volcengine_endpoint_id: values.volcengine_endpoint_id.trim(),
         minimax_base_url: values.minimax_base_url.trim(),
         minimax_model: values.minimax_model.trim(),
+        deepseek_base_url: values.deepseek_base_url.trim(),
+        deepseek_model: values.deepseek_model.trim(),
       }
       const vk = values.volcengine_api_key?.trim()
       if (vk) payload.volcengine_api_key = vk
       const mk = values.minimax_api_key?.trim()
       if (mk) payload.minimax_api_key = mk
+      const dk = values.deepseek_api_key?.trim()
+      if (dk) payload.deepseek_api_key = dk
       await api.put<ModelProviderSettings>('/settings/model-providers', payload)
     },
     onSuccess: async () => {
@@ -332,6 +348,7 @@ export default function SettingsPage() {
     const d = modelData?.default_provider
     if (d === 'volcengine') return '火山引擎（OpenAI 兼容）'
     if (d === 'minimax') return 'MiniMax（Anthropic）'
+    if (d === 'deepseek') return 'Deepseek（OpenAI 兼容）'
     return '未指定'
   }, [modelData])
 
@@ -687,8 +704,7 @@ export default function SettingsPage() {
   const modelTab: ReactNode = (
     <div>
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-        分别配置火山引擎（OpenAI 兼容）与 MiniMax 国内版（Anthropic
-        形态）。请先保存再测试连接。密钥不回显。
+        分别配置火山引擎、MiniMax 与 Deepseek。请先保存再测试连接。密钥不回显。
       </Typography.Paragraph>
 
       <Form
@@ -702,10 +718,12 @@ export default function SettingsPage() {
           volcengine_endpoint_id: '',
           minimax_base_url: '',
           minimax_model: '',
+          deepseek_base_url: 'https://api.deepseek.com',
+          deepseek_model: 'deepseek-v4-flash',
         }}
       >
         <Row gutter={[16, 16]}>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               size="small"
               title={
@@ -778,7 +796,7 @@ export default function SettingsPage() {
             </Card>
           </Col>
 
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Card
               size="small"
               title={
@@ -843,6 +861,79 @@ export default function SettingsPage() {
                     loading={setDefaultMut.isPending}
                     disabled={saveModelMut.isPending || modelLoading}
                     onClick={() => setDefaultMut.mutate('minimax')}
+                  >
+                    设为默认
+                  </Button>
+                )}
+              </Space>
+            </Card>
+          </Col>
+
+          <Col xs={24} md={8}>
+            <Card
+              size="small"
+              title={
+                <Space size={4}>
+                  <span>Deepseek</span>
+                  <Tag style={{ marginInlineEnd: 0 }}>OpenAI</Tag>
+                </Space>
+              }
+              loading={modelLoading}
+              styles={{ body: { paddingBlock: 12 } }}
+              extra={
+                modelData?.deepseek.api_key_configured ? (
+                  <Tag color="success" style={{ margin: 0 }}>
+                    已配密钥
+                  </Tag>
+                ) : (
+                  <Tag style={{ margin: 0 }}>未配密钥</Tag>
+                )
+              }
+            >
+              <Form.Item
+                label="BASE URI（base_url）"
+                name="deepseek_base_url"
+                tooltip="OpenAI 兼容根路径"
+              >
+                <Input placeholder="https://api.deepseek.com" autoComplete="off" />
+              </Form.Item>
+              <Form.Item label="API Key" name="deepseek_api_key" tooltip="留空不修改已存密钥">
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+              <Form.Item label="模型名" name="deepseek_model" tooltip="默认 deepseek-v4-flash">
+                <Input placeholder="deepseek-v4-flash" autoComplete="off" />
+              </Form.Item>
+              <Space wrap size="small">
+                <Button type="primary" size="small" htmlType="submit" loading={saveModelMut.isPending}>
+                  保存
+                </Button>
+                <Tooltip
+                  title={
+                    deepseekTestReady(modelData)
+                      ? ''
+                      : '请先保存并填写 base_url、模型名与密钥'
+                  }
+                >
+                  <Button
+                    size="small"
+                    disabled={!deepseekTestReady(modelData)}
+                    loading={testMut.isPending}
+                    onClick={() => testMut.mutate('deepseek')}
+                  >
+                    测试连接
+                  </Button>
+                </Tooltip>
+                {modelData?.default_provider === 'deepseek' ? (
+                  <Tag color="blue" style={{ margin: 0 }}>
+                    默认
+                  </Tag>
+                ) : (
+                  <Button
+                    size="small"
+                    type="default"
+                    loading={setDefaultMut.isPending}
+                    disabled={saveModelMut.isPending || modelLoading}
+                    onClick={() => setDefaultMut.mutate('deepseek')}
                   >
                     设为默认
                   </Button>

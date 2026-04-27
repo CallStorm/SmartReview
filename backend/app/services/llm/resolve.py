@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.models.model_provider_settings import ModelProviderSettings
-from app.schemas.model_provider import ModelProviderPublic, MinimaxPublic, VolcenginePublic
+from app.schemas.model_provider import DeepseekPublic, ModelProviderPublic, MinimaxPublic, VolcenginePublic
 from app.services.llm.registry import ProviderId
 
 
@@ -39,15 +39,24 @@ def effective_minimax(db: Session, settings: Settings | None = None) -> tuple[st
     return url, key, model
 
 
+def effective_deepseek(db: Session, settings: Settings | None = None) -> tuple[str, str, str]:
+    settings = settings or get_settings()
+    row = _get_row(db)
+    url = _strip_pair(row.deepseek_base_url if row else None, settings.deepseek_base_url)
+    key = _strip_pair(row.deepseek_api_key if row else None, settings.deepseek_api_key)
+    model = _strip_pair(row.deepseek_model if row else None, settings.deepseek_model)
+    return url, key, model
+
+
 def effective_default_provider(db: Session, settings: Settings | None = None) -> ProviderId | None:
     settings = settings or get_settings()
     row = _get_row(db)
     if row and row.default_provider:
         p = row.default_provider.strip()
-        if p in ("volcengine", "minimax"):
+        if p in ("volcengine", "minimax", "deepseek"):
             return p  # type: ignore[return-value]
     env_p = (settings.default_llm_provider or "").strip()
-    if env_p in ("volcengine", "minimax"):
+    if env_p in ("volcengine", "minimax", "deepseek"):
         return env_p  # type: ignore[return-value]
     return None
 
@@ -57,6 +66,7 @@ def build_model_provider_public(db: Session) -> ModelProviderPublic:
     row = _get_row(db)
     v_url, v_key, v_eid = effective_volcengine(db, settings)
     m_url, m_key, m_model = effective_minimax(db, settings)
+    d_url, d_key, d_model = effective_deepseek(db, settings)
     default_p = effective_default_provider(db, settings)
     return ModelProviderPublic(
         default_provider=default_p,
@@ -69,6 +79,11 @@ def build_model_provider_public(db: Session) -> ModelProviderPublic:
             base_url=m_url,
             model=m_model,
             api_key_configured=bool(m_key),
+        ),
+        deepseek=DeepseekPublic(
+            base_url=d_url,
+            model=d_model,
+            api_key_configured=bool(d_key),
         ),
     )
 
@@ -85,5 +100,8 @@ def resolve_for_test(db: Session, provider_id: ProviderId) -> ResolvedForTest:
     if provider_id == "volcengine":
         url, key, eid = effective_volcengine(db, settings)
         return ResolvedForTest(base_url=url, api_key=key, model_or_endpoint=eid)
+    if provider_id == "deepseek":
+        url, key, model = effective_deepseek(db, settings)
+        return ResolvedForTest(base_url=url, api_key=key, model_or_endpoint=model)
     url, key, model = effective_minimax(db, settings)
     return ResolvedForTest(base_url=url, api_key=key, model_or_endpoint=model)

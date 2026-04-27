@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 from app.services.llm.adapters.anthropic import chat_anthropic_messages
 from app.services.llm.adapters.openai_compatible import chat_openai_compatible
 from app.services.llm.registry import provider_protocol
-from app.services.llm.resolve import effective_default_provider, effective_minimax, effective_volcengine
+from app.services.llm.resolve import (
+    effective_deepseek,
+    effective_default_provider,
+    effective_minimax,
+    effective_volcengine,
+)
 
 
 class TokenUsage(TypedDict):
@@ -67,16 +72,21 @@ def complete_chat_with_usage(
 ) -> ChatResult:
     provider = effective_default_provider(db)
     if not provider:
-        raise ValueError("未配置默认模型提供方，请在系统设置中选择火山引擎或 MiniMax")
+        raise ValueError("未配置默认模型提供方，请在系统设置中选择火山引擎、MiniMax 或 Deepseek")
     proto = provider_protocol(provider)
     if proto == "openai_compatible":
-        url, key, eid = effective_volcengine(db)
-        if not url or not key or not eid:
-            raise ValueError("火山引擎接口未配置完整（base_url、密钥、endpoint_id）")
+        if provider == "volcengine":
+            url, key, model_or_endpoint = effective_volcengine(db)
+            if not url or not key or not model_or_endpoint:
+                raise ValueError("火山引擎接口未配置完整（base_url、密钥、endpoint_id）")
+        else:
+            url, key, model_or_endpoint = effective_deepseek(db)
+            if not url or not key or not model_or_endpoint:
+                raise ValueError("Deepseek 接口未配置完整（base_url、密钥、model）")
         text, usage = chat_openai_compatible(
             base_url=url,
             api_key=key,
-            model=eid,
+            model=model_or_endpoint,
             user_message=user_message,
             system=system,
             max_tokens=max_tokens,

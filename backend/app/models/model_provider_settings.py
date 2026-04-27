@@ -24,6 +24,12 @@ class ModelProviderSettings(Base):
     minimax_api_key: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
     minimax_model: Mapped[str] = mapped_column(String(256), nullable=False, default="")
 
+    deepseek_base_url: Mapped[str] = mapped_column(
+        String(512), nullable=False, default="https://api.deepseek.com"
+    )
+    deepseek_api_key: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    deepseek_model: Mapped[str] = mapped_column(String(256), nullable=False, default="deepseek-v4-flash")
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     minimax_base_url: str = ""
     minimax_api_key: str = ""
     minimax_model: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-v4-flash"
 
     # OnlyOffice（可在「设置」中覆盖；此处为未配置界面时的兜底）
     onlyoffice_docs_url: str = ""

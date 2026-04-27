@@ -65,6 +65,14 @@ def update_model_providers(
     if "minimax_model" in patch and patch["minimax_model"] is not None:
         row.minimax_model = patch["minimax_model"].strip()
 
+    if "deepseek_base_url" in patch and patch["deepseek_base_url"] is not None:
+        row.deepseek_base_url = patch["deepseek_base_url"].strip()
+    key_d = patch.get("deepseek_api_key")
+    if key_d is not None and str(key_d).strip():
+        row.deepseek_api_key = str(key_d).strip()
+    if "deepseek_model" in patch and patch["deepseek_model"] is not None:
+        row.deepseek_model = patch["deepseek_model"].strip()
+
     db.commit()
     db.refresh(row)
     return build_model_provider_public(db)

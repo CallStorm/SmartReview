@@ -33,7 +33,7 @@ export interface OnlyofficeEditorConfigResponse {
 
 export type LlmApiProtocol = 'openai_compatible' | 'anthropic'
 
-export type ProviderId = 'volcengine' | 'minimax'
+export type ProviderId = 'volcengine' | 'minimax' | 'deepseek'
 
 export interface VolcengineSettingsPart {
   api_protocol: 'openai_compatible'
@@ -49,10 +49,18 @@ export interface MinimaxSettingsPart {
   api_key_configured: boolean
 }
 
+export interface DeepseekSettingsPart {
+  api_protocol: 'openai_compatible'
+  base_url: string
+  model: string
+  api_key_configured: boolean
+}
+
 export interface ModelProviderSettings {
   default_provider: ProviderId | null
   volcengine: VolcengineSettingsPart
   minimax: MinimaxSettingsPart
+  deepseek: DeepseekSettingsPart
 }
 
 export interface ModelTestResult {

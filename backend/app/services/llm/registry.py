@@ -4,7 +4,7 @@ from typing import Literal
 
 from app.schemas.model_provider import LlmApiProtocol
 
-ProviderId = Literal["volcengine", "minimax"]
+ProviderId = Literal["volcengine", "minimax", "deepseek"]
 
 
 class ProviderSpec:
@@ -31,6 +31,11 @@ PROVIDER_REGISTRY: dict[ProviderId, ProviderSpec] = {
         "minimax",
         "anthropic",
         "https://api.minimaxi.com/anthropic",
+    ),
+    "deepseek": ProviderSpec(
+        "deepseek",
+        "openai_compatible",
+        "https://api.deepseek.com",
     ),
 }
 
