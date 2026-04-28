@@ -60,6 +60,11 @@ const SEVERITY_TAG_STYLES: Record<string, { bg: string; text: string; label: str
   info: { bg: '#DBEAFE', text: '#1E3A8A', label: '提示' },
 }
 
+const BASIS_CATEGORY_TAG_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  现行缺失: { bg: '#FEE2E2', text: '#991B1B', label: '现行缺失' },
+  废止误引: { bg: '#FEF3C7', text: '#92400E', label: '废止误引' },
+}
+
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   return v.map((x) => String(x ?? '').trim()).filter(Boolean)
@@ -156,6 +161,15 @@ function getIssueLocation(issue: ReportIssue): {
     headingParaIndex,
     userTitle,
   }
+}
+
+function getBasisIssueCategory(issue: ReportIssue): string {
+  const related = issue.related ?? {}
+  const rawCategory = String((related as Record<string, unknown>).category ?? '').trim()
+  if (rawCategory === '现行缺失' || rawCategory === '废止误引') return rawCategory
+  const message = String(issue.message ?? '').trim()
+  if (message.includes('废止') || message.includes('失效')) return '废止误引'
+  return '现行缺失'
 }
 
 function parseReport(json: string | null | undefined): ReviewReportV1 | null {
@@ -557,16 +571,16 @@ export default function ManualReviewPage() {
                         },
                       },
                       {
-                        title: '严重级别',
-                        dataIndex: 'severity',
+                        title: '类别',
                         width: 120,
                         onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
                         onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
-                        render: (severity: string) => {
-                          const style = SEVERITY_TAG_STYLES[severity] ?? {
+                        render: (_, it) => {
+                          const category = getBasisIssueCategory(it)
+                          const style = BASIS_CATEGORY_TAG_STYLES[category] ?? {
                             bg: '#E2E8F0',
                             text: '#334155',
-                            label: severity,
+                            label: category || '-',
                           }
                           return (
                             <Tag

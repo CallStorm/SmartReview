@@ -71,6 +71,9 @@ JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 
 }
 severity 取值仅为 error、warning、info。若无问题，issues 为 [] 且 passed 为 true。related 可为空对象。"""
 
+_BASIS_ALLOWED_CATEGORIES = {"现行缺失", "废止误引"}
+_BASIS_MISSING_EVIDENCE = "文档全文及表格中未发现该规范的名称或编号。"
+
 
 def _append_log(db: Session, task: SchemeReviewTask, level: str, message: str) -> None:
     ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -155,6 +158,9 @@ def _normalize_llm_step(
         rel = it.get("related")
         if not isinstance(rel, dict):
             rel = {}
+        raw_category = str(it.get("category") or "").strip()
+        if raw_category and not str(rel.get("category") or "").strip():
+            rel["category"] = raw_category
         extra_anchor = it.get("anchor")
         anchor = {**anchor_base}
         if isinstance(extra_anchor, dict):
@@ -519,20 +525,51 @@ def _review_result_to_json(
 def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
     lines = []
     for r in rows:
+        mandatory = "是" if bool(r.is_mandatory) else "否"
         lines.append(
-            f"- 文献类型: {r.doc_type} | 标准号: {r.standard_no} | 名称: {r.doc_name} | 效力: {r.effect_status}"
+            f"- 文献类型: {r.doc_type} | 标准号: {r.standard_no} | 名称: {r.doc_name} | 效力: {r.effect_status} | 必引: {mandatory}"
         )
     catalog = "\n".join(lines) if lines else "(编制依据库中暂无记录)"
     return (
-        "以下为待审文档中与编制依据相关的章节全文：\n\n---\n"
-        f"{full_content[:24000]}\n---\n\n"
-        "说明：若章节中存在表格，系统会按“[表格第N行] 单元格1 | 单元格2 ...”形式展开。\n\n"
-        "以下为该方案类型在系统中登记的编制依据条目（规范列表），请对照检查文档中引用是否正确、是否遗漏应引用规范、效力状态是否合理：\n"
+        "# Role\n"
+        "你是一位极其严谨的建筑工程文档合规性审核专家。\n\n"
+        "# Task\n"
+        "对比【待审文档】与【标准规范列表】，识别“现行必引缺失”与“废止误引”两类合规性问题。\n"
+        "说明：输入文本已剔除“精确匹配已命中”的行；仅对剩余文本与剩余条目执行匹配。\n\n"
+        "# Process Logic\n"
+        "1. 提取待审文档正文和 [表格第N行] 中出现的所有标准号（如 GB50007-2011）和名称（如 建筑地基基础设计规范）。\n"
+        "2. 将提取结果与【标准规范列表】逐一比对：\n"
+        "   - 规则A（现行缺失）：若列表条目为“效力：现行”且“必引：是”，但其标准号和名称均未出现在文档中，判定为“现行缺失”。\n"
+        "   - 规则B（废止误引）：若列表条目为“效力：废止”，但其标准号或名称出现在文档中，判定为“废止误引”。\n"
+        "   - 规则C：忽略列表外多余引用；忽略列表内“必引：否”且文档未引用的条目。\n\n"
+        "# Constraints\n"
+        "- issues 仅允许包含“现行缺失”“废止误引”。\n"
+        "- 每条 issue 必须包含 category，且只能是“现行缺失”或“废止误引”。\n"
+        "- 禁止输出模糊表述（如“建议核实”“需确认”“可能”“请核查”），必须给出确定性判定。\n"
+        f"- 若问题类型为“现行缺失”，evidence 固定填写：{_BASIS_MISSING_EVIDENCE}\n"
+        "- 若问题类型为“废止误引”，evidence 必须是文档原文或表格展开内容中的直接摘录。\n"
+        "- 若某条废止规范未被引用，不得为其生成 issue。\n"
+        "- 每条 issue 的 related.suggestions 必须返回 1~2 条可执行整改动作，使用祈使句，禁止空数组。\n"
+        "- 建议语句必须包含明确对象（标准号或规范名称）与动作（补充引用/删除替换/同步修订）。\n"
+        "- category=现行缺失 时，suggestions 优先使用“在编制依据中补充引用《规范名》（标准号）”类动作。\n"
+        "- category=废止误引 时，suggestions 优先使用“删除废止规范并替换为现行版本”类动作。\n"
+        "- 严格按给定 JSON 结构输出，不要新增、改名字段。\n"
+        "- 仅输出 JSON 对象本体，不要输出任何额外解释或 Markdown 代码块。\n\n"
+        "# Data Source\n"
+        "【待审文档】：\n"
+        "以下内容为待审文档中与编制依据相关的章节全文（若有表格，已按“[表格第N行] 单元格1 | 单元格2 ...”展开）：\n\n"
+        "---\n"
+        f"{full_content[:24000]}\n"
+        "---\n\n"
+        "【标准规范列表】：\n"
+        "以下为该方案类型在系统中登记的编制依据条目（审核必须完全依照该列表执行）：\n"
         f"{catalog}\n\n"
-        "审核要求：必须同时检查正文与表格中的规范编号/名称，不得遗漏仅出现在表格单元格里的引用。\n"
-        "请输出 JSON：若某条规范在文档中存在问题，在 issues 中说明标准号或文献名称、问题原因；"
-        "并在 related 中给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
-        "related 中还可含 standard_no、doc_name。"
+        "# Suggestions Template\n"
+        "- 现行缺失示例：['在编制依据中补充引用《建筑地基基础设计规范》（GB50007-2011）', '补充后同步检查目录与正文引用名称一致']\n"
+        "- 废止误引示例：['从编制依据中删除《建设工程高大模板支撑系统施工安全监督导则》（建办质[2009]254号）', '将该废止规范替换为对应现行标准并同步修订正文引用']\n\n"
+        "# Output Format\n"
+        "请严格按照以下 JSON 结构输出：\n"
+        '{"passed": boolean, "summary": string, "issues": [{"category": "现行缺失|废止误引", "message": string, "evidence": string, "related": {"standard_no": string, "doc_name": string, "suggestions": string[]}}]}'
     )
 
 
@@ -552,7 +589,39 @@ def _normalize_basis_issue_related(issue: ReportIssue) -> None:
     for item in suggestions:
         if item not in deduped_suggestions:
             deduped_suggestions.append(item)
-    related["suggestions"] = deduped_suggestions
+    standard_no = str(related.get("standard_no") or "").strip()
+    doc_name = str(related.get("doc_name") or "").strip()
+    raw_category = str(related.get("category") or "").strip()
+    category = raw_category if raw_category in _BASIS_ALLOWED_CATEGORIES else ""
+    if not category:
+        msg = issue.message.strip()
+        if "废止" in msg or "失效" in msg:
+            category = "废止误引"
+        else:
+            category = "现行缺失"
+    related["category"] = category
+
+    if category == "现行缺失":
+        issue.evidence = _BASIS_MISSING_EVIDENCE
+    elif not str(issue.evidence or "").strip():
+        issue.evidence = str(related.get("original_text") or "").strip()
+
+    if not deduped_suggestions:
+        if category == "废止误引":
+            subject = f"《{doc_name}》（{standard_no}）" if doc_name or standard_no else "该废止规范"
+            deduped_suggestions = [
+                f"从编制依据中删除{subject}",
+                "将该废止规范替换为对应现行标准并同步修订正文引用",
+            ]
+        else:
+            subject = f"《{doc_name}》（{standard_no}）" if doc_name or standard_no else "相关现行必引规范（标准号待补充）"
+            deduped_suggestions = [
+                f"在编制依据中补充引用{subject}",
+                "补充后同步检查目录与正文引用名称一致",
+            ]
+    related["suggestions"] = deduped_suggestions[:2]
+    related["standard_no"] = standard_no
+    related["doc_name"] = doc_name
 
     related["original_text"] = str(related.get("original_text") or issue.evidence or "").strip()
 
