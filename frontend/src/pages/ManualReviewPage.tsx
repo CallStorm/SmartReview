@@ -689,34 +689,6 @@ export default function ManualReviewPage() {
                           )
                         },
                       },
-                      {
-                        title: '严重级别',
-                        dataIndex: 'severity',
-                        width: 120,
-                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
-                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
-                        render: (severity: string) => {
-                          const style = SEVERITY_TAG_STYLES[severity] ?? {
-                            bg: '#E2E8F0',
-                            text: '#334155',
-                            label: severity,
-                          }
-                          return (
-                            <Tag
-                              style={{
-                                background: style.bg,
-                                color: style.text,
-                                border: 'none',
-                                borderRadius: 6,
-                                padding: '2px 10px',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {style.label}
-                            </Tag>
-                          )
-                        },
-                      },
                     ]}
                   />
                 </>
@@ -814,34 +786,6 @@ export default function ManualReviewPage() {
                             <Typography.Text type="secondary">
                               模型未返回整改建议，请在模板提示词中补充「输出 suggestions」。
                             </Typography.Text>
-                          )
-                        },
-                      },
-                      {
-                        title: '严重级别',
-                        dataIndex: 'severity',
-                        width: 120,
-                        onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
-                        onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
-                        render: (severity: string) => {
-                          const style = SEVERITY_TAG_STYLES[severity] ?? {
-                            bg: '#E2E8F0',
-                            text: '#334155',
-                            label: severity,
-                          }
-                          return (
-                            <Tag
-                              style={{
-                                background: style.bg,
-                                color: style.text,
-                                border: 'none',
-                                borderRadius: 6,
-                                padding: '2px 10px',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {style.label}
-                            </Tag>
                           )
                         },
                       },
