@@ -54,12 +54,6 @@ const MODERN_TABLE_CELL_STYLE = {
     'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
 }
 
-const SEVERITY_TAG_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  error: { bg: '#FEE2E2', text: '#991B1B', label: '严重' },
-  warning: { bg: '#FEF3C7', text: '#92400E', label: '警告' },
-  info: { bg: '#DBEAFE', text: '#1E3A8A', label: '提示' },
-}
-
 const BASIS_CATEGORY_TAG_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   现行缺失: { bg: '#FEE2E2', text: '#991B1B', label: '现行缺失' },
   废止误引: { bg: '#FEF3C7', text: '#92400E', label: '废止误引' },
