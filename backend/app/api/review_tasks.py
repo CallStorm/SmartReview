@@ -150,6 +150,10 @@ def delete_task(
         raise HTTPException(status_code=404, detail="任务不存在")
     if t.user_id != user.id and user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="无权删除该任务")
+    source_key = (t.object_key or "").strip()
+    source_prefix = source_key.rsplit(".", maxsplit=1)[0] if "." in source_key else source_key
+    if source_prefix:
+        minio_storage.remove_objects_with_prefix(f"{source_prefix}/images/")
     minio_storage.remove_object_if_exists(t.object_key)
     if (t.output_object_key or "").strip():
         minio_storage.remove_object_if_exists(t.output_object_key.strip())

@@ -183,3 +183,20 @@ def remove_object_if_exists(object_key: str) -> None:
         c.remove_object(s.minio_bucket, key)
     except Exception:
         pass
+
+
+def remove_objects_with_prefix(prefix: str) -> None:
+    """Best-effort delete all objects under prefix."""
+    pfx = (prefix or "").strip()
+    if not pfx:
+        return
+    try:
+        s = get_settings()
+        c = get_client()
+        for obj in c.list_objects(s.minio_bucket, prefix=pfx, recursive=True):
+            try:
+                c.remove_object(s.minio_bucket, obj.object_name)
+            except Exception:
+                continue
+    except Exception:
+        pass

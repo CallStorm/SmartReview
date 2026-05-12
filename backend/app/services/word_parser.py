@@ -53,7 +53,11 @@ def _table_to_lines(table: Table) -> list[str]:
     return lines
 
 
-def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
+def parse_docx_to_tree(
+    file_obj: io.BytesIO,
+    *,
+    paragraph_image_keys: dict[int, list[str]] | None = None,
+) -> dict[str, Any]:
     file_obj.seek(0)
     doc = Document(file_obj)
     counter = 0
@@ -71,6 +75,7 @@ def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
             return nodes_out
         return stack[-1]["children"]
 
+    image_map = paragraph_image_keys or {}
     para_index = 0
     for blk in _iter_block_items(doc):
         if isinstance(blk, Paragraph):
@@ -91,6 +96,9 @@ def parse_docx_to_tree(file_obj: io.BytesIO) -> dict[str, Any]:
                 stack.append(node)
             elif text and stack:
                 stack[-1]["content"].append(text)
+            if stack:
+                for image_key in image_map.get(para_index, []):
+                    stack[-1]["content"].append(f"[附图] {image_key}")
             para_index += 1
         elif isinstance(blk, Table) and stack:
             table_lines = _table_to_lines(blk)

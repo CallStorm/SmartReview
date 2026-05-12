@@ -30,6 +30,7 @@ from app.services.doc_tree_utils import (
     resolve_user_node,
     title_path_for_node,
 )
+from app.services.docx_image_assets import extract_and_store_docx_images
 from app.services.docx_comments import inject_comments_at_paragraphs
 from app.services.dify_client import retrieve_dataset_chunks
 from app.services.dify_settings import get_dify_url_and_key
@@ -729,9 +730,11 @@ def _content_prompt(
         "1. 严格依据【审核提示词】提取核查项，不得自行新增无关检查项。\n"
         "2. 逐项核查【当前章节及子节正文】；若缺失关键信息，明确指出缺失项。\n"
         "3. 使用【引用章节正文】与【知识库检索片段】做交叉验证与依据补充。\n"
-        "4. 对值为“(无)”的输入块，不得臆测内容；如影响判断，请在 issues 中说明“证据不足/无法交叉验证”。\n"
-        "5. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
-        "6. 每条 issue 的 related 中必须给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        "4. 若正文出现“图如下/见下图/附图/组织机构图如下”等图示指示语，必须检查其后是否紧随至少一行“[附图] 对象键”。\n"
+        "5. 如图示指示语后缺少“[附图]”行，必须输出问题并给出缺图证据。\n"
+        "6. 对值为“(无)”的输入块，不得臆测内容；如影响判断，请在 issues 中说明“证据不足/无法交叉验证”。\n"
+        "7. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
+        "8. 每条 issue 的 related 中必须给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
 
 
@@ -797,7 +800,26 @@ def run_review_pipeline(task_id: int) -> None:
         _append_log(db, task, "info", "从对象存储读取审核文件…")
         db.commit()
         raw = minio_storage.get_object_bytes(task.object_key)
-        user_tree = parse_docx_to_tree(BytesIO(raw))
+        image_result = extract_and_store_docx_images(
+            docx_bytes=raw,
+            source_object_key=task.object_key,
+        )
+        _append_log(
+            db,
+            task,
+            "info",
+            (
+                "文档图片处理完成: "
+                f"uploaded={image_result.uploaded_count}, "
+                f"failed={image_result.failed_count}, "
+                f"paragraphs_with_images={len(image_result.paragraph_image_keys)}"
+            ),
+        )
+        db.commit()
+        user_tree = parse_docx_to_tree(
+            BytesIO(raw),
+            paragraph_image_keys=image_result.paragraph_image_keys,
+        )
         user_nodes = user_tree.get("nodes") or []
 
         mapping, struct_raw = align_template_user_trees(template_nodes, user_nodes)
