@@ -31,6 +31,7 @@ const STEP_LABELS: Record<string, string> = {
   compilation_basis: '编制依据审核',
   context_consistency: '上下文一致性',
   content: '内容审核',
+  full_document: '通篇审核',
 }
 
 const SEVERITY_META: Record<string, { label: string; color: string }> = {
@@ -62,6 +63,18 @@ const BASIS_CATEGORY_TAG_STYLES: Record<string, { bg: string; text: string; labe
 function asStringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   return v.map((x) => String(x ?? '').trim()).filter(Boolean)
+}
+
+/** Parse title_path from array or "A > B" string (full-document / legacy issues). */
+function parseTitlePathValue(v: unknown): string[] {
+  if (Array.isArray(v)) return asStringArray(v)
+  if (typeof v === 'string' && v.trim()) {
+    return v
+      .split(/\s*[>＞]\s*/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+  }
+  return []
 }
 
 function extractStandardsText(text: string): string[] {
@@ -130,12 +143,39 @@ function getIssueLocation(issue: ReportIssue): {
 } {
   const related = issue.related
   const locationRaw = related?.location
-  const location = typeof locationRaw === 'object' && locationRaw ? locationRaw : undefined
-  const chapterPathRaw = Array.isArray((location as Record<string, unknown> | undefined)?.chapter_path)
-    ? (((location as Record<string, unknown>).chapter_path as unknown[]) ?? [])
-    : asStringArray(issue.anchor?.title_path)
-  const chapterPath = chapterPathRaw.map((x) => String(x ?? '').trim()).filter(Boolean)
+  const location =
+    typeof locationRaw === 'object' && locationRaw && !Array.isArray(locationRaw)
+      ? locationRaw
+      : undefined
+  const chapterPathFromLocString =
+    typeof locationRaw === 'string' ? parseTitlePathValue(locationRaw) : []
+  const chapterPathFromLoc = parseTitlePathValue(
+    (location as Record<string, unknown> | undefined)?.chapter_path,
+  )
+  const chapterPathFromAnchor = parseTitlePathValue(issue.anchor?.title_path)
+  const chapterPath =
+    chapterPathFromLoc.length > 0
+      ? chapterPathFromLoc
+      : chapterPathFromLocString.length > 0
+        ? chapterPathFromLocString
+        : chapterPathFromAnchor
   const chapterText = String((location as Record<string, unknown> | undefined)?.chapter_text ?? '').trim()
+  const relatedChapter = parseTitlePathValue(related?.chapter)
+  const relatedChapterText =
+    typeof related?.chapter_text === 'string' ? String(related.chapter_text).trim() : ''
+  const relatedChapterA =
+    typeof related?.chapter_a === 'string' ? String(related.chapter_a).trim() : ''
+  const evidencePath = parseTitlePathValue(getIssueOriginalText(issue))
+  const messagePath = (() => {
+    const msg = String(issue.message ?? '')
+    for (const line of msg.split('\n')) {
+      if (/\s*[>＞]\s*/.test(line)) {
+        const p = parseTitlePathValue(line)
+        if (p.length) return p
+      }
+    }
+    return [] as string[]
+  })()
   const templateNodeId = String(
     (location as Record<string, unknown> | undefined)?.template_node_id ??
       issue.anchor?.template_node_id ??
@@ -149,8 +189,17 @@ function getIssueLocation(issue: ReportIssue): {
   const userTitle = String(
     (location as Record<string, unknown> | undefined)?.user_title ?? issue.anchor?.user_title ?? '',
   ).trim()
+  const chapterDisplay =
+    chapterText ||
+    chapterPath.join(' > ') ||
+    relatedChapterText ||
+    relatedChapterA ||
+    relatedChapter.join(' > ') ||
+    evidencePath.join(' > ') ||
+    messagePath.join(' > ')
+
   return {
-    chapterText: chapterText || chapterPath.join(' > '),
+    chapterText: chapterDisplay,
     templateNodeId,
     headingParaIndex,
     userTitle,
@@ -686,7 +735,7 @@ export default function ManualReviewPage() {
                     ]}
                   />
                 </>
-              ) : activeStep.step_id === 'content' ? (
+              ) : activeStep.step_id === 'content' || activeStep.step_id === 'full_document' ? (
                 <>
                   <style>
                     {`
@@ -717,7 +766,7 @@ export default function ManualReviewPage() {
                     dataSource={activeStep.issues}
                     columns={[
                       {
-                        title: '当前章节',
+                        title: activeStep.step_id === 'full_document' ? '定位章节' : '当前章节',
                         width: 280,
                         onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
                         onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
@@ -773,7 +822,11 @@ export default function ManualReviewPage() {
                           return suggestions.length > 0 ? (
                             <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#334155' }}>
                               {suggestions.map((s, idx) => (
-                                <li key={`${it.issue_id || it.message}-content-${idx}`}>{s}</li>
+                                <li
+                                  key={`${it.issue_id || it.message}-${activeStep.step_id}-${idx}`}
+                                >
+                                  {s}
+                                </li>
                               ))}
                             </ul>
                           ) : (

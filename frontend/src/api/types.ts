@@ -81,7 +81,14 @@ export type WorkflowStepId =
   | 'compilation_basis'
   | 'context_consistency'
   | 'content'
+  | 'full_document'
   | 'end'
+
+export interface FullDocumentReviewConfig {
+  review_prompt: string
+  dify_dataset_id?: string | null
+  knowledge_keywords?: string[]
+}
 
 export interface ReviewWorkflowData {
   steps: WorkflowStepId[]
@@ -143,6 +150,7 @@ export interface TemplatePublic {
   original_filename: string
   parsed_structure: { nodes: TemplateNode[] } | null
   review_workflow: ReviewWorkflowData | null
+  full_document_review_config?: FullDocumentReviewConfig | null
   parsed_at: string | null
   updated_at: string | null
 }

@@ -18,9 +18,15 @@ class ReviewWorkflowData(BaseModel):
             "compilation_basis",
             "context_consistency",
             "content",
+            "full_document",
             "end",
         }
-        optional_mid = {"compilation_basis", "context_consistency", "content"}
+        optional_mid = {
+            "compilation_basis",
+            "context_consistency",
+            "content",
+            "full_document",
+        }
         if steps[0] != "start":
             raise ValueError("第一步须为起点 start")
         if steps[1] != "structure":
@@ -33,17 +39,31 @@ class ReviewWorkflowData(BaseModel):
             raise ValueError("步骤不可重复")
         middle = steps[2:-1]
         if any(m not in optional_mid for m in middle):
-            raise ValueError("中间仅可为编制依据、上下文一致性或内容审核")
-        if middle.count("compilation_basis") > 1:
+            raise ValueError("中间仅可为编制依据、上下文一致性、内容审核或通篇审核")
+        if len(middle) != len(set(middle)):
             raise ValueError("步骤不可重复")
         if "compilation_basis" in middle and middle[0] != "compilation_basis":
             raise ValueError("编制依据须紧随结构审核之后")
-        rest = [m for m in middle if m != "compilation_basis"]
-        if len(rest) == 2 and set(rest) != {"context_consistency", "content"}:
+        if "full_document" in middle and middle[-1] != "full_document":
+            raise ValueError("通篇审核须为中间步骤的最后一步")
+        core = [m for m in middle if m not in ("compilation_basis", "full_document")]
+        if len(core) == 2 and set(core) != {"context_consistency", "content"}:
             raise ValueError("中间步骤顺序无效")
-        if len(rest) == 1 and rest[0] not in ("context_consistency", "content"):
+        if len(core) == 1 and core[0] not in ("context_consistency", "content"):
+            raise ValueError("中间步骤顺序无效")
+        if len(core) > 2:
             raise ValueError("中间步骤顺序无效")
         return steps
+
+
+class FullDocumentReviewConfig(BaseModel):
+    review_prompt: str = ""
+    dify_dataset_id: str | None = None
+    knowledge_keywords: list[str] = Field(default_factory=list)
+
+
+class FullDocumentReviewConfigUpdate(BaseModel):
+    full_document_review_config: FullDocumentReviewConfig
 
 
 class ReviewWorkflowUpdate(BaseModel):
@@ -64,6 +84,7 @@ class TemplatePublic(BaseModel):
     original_filename: str
     parsed_structure: Any | None = None
     review_workflow: dict[str, Any] | None = None
+    full_document_review_config: dict[str, Any] | None = None
     parsed_at: datetime | None
     updated_at: datetime | None
 

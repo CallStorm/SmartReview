@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,11 +23,17 @@ from app.models.scheme_review_task import ReviewTaskStatus, SchemeReviewTask
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.schemas.review_report import ReportIssue, ReportStep, ReviewReportV1
-from app.schemas.template import ReviewWorkflowData
+from app.schemas.template import FullDocumentReviewConfig, ReviewWorkflowData
 from app.services import minio_storage
 from app.services.doc_tree_utils import (
+    UserHeadingEntry,
+    build_user_heading_index,
+    collect_full_document_text,
     collect_subtree_text,
+    format_heading_catalog,
     iter_nodes,
+    parse_title_path_value,
+    resolve_heading_from_index,
     resolve_user_node,
     title_path_for_node,
 )
@@ -54,7 +61,12 @@ WORD_COMMENT_STEP_LABEL_CN: dict[str, str] = {
     "compilation_basis": "编制依据审核",
     "context_consistency": "上下文一致性",
     "content": "内容审核",
+    "full_document": "通篇审核",
 }
+
+FULL_DOCUMENT_TEXT_CAP = 80_000
+FULL_DOCUMENT_KB_CAP = 12_000
+FULL_DOCUMENT_HEADING_CATALOG_MAX = 300
 
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
@@ -71,6 +83,33 @@ JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 
   ]
 }
 severity 取值仅为 error、warning、info。若无问题，issues 为 [] 且 passed 为 true。related 可为空对象。"""
+
+FULL_DOCUMENT_JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
+格式严格如下：
+{
+  "passed": true 或 false,
+  "summary": "一句话摘要",
+  "issues": [
+    {
+      "severity": "error",
+      "message": "问题说明",
+      "evidence": "文档中的依据摘录",
+      "anchor": {
+        "heading_para_index": 128,
+        "title_path": ["六、施工管理及作业人员配备和分工", "4.其他作业人员"]
+      },
+      "related": { "suggestions": ["可执行整改建议"] }
+    }
+  ]
+}
+规则：
+- severity 取值仅为 error、warning、info。
+- 每条可定位到具体章节的问题，anchor 必须包含 heading_para_index（整数，取自【文档标题索引】或正文 [hpi=N]，禁止臆造）及 title_path（字符串数组，每级标题一项，须与该 hpi 的完整路径一致）。
+- 无法定位到具体章节时，可省略 anchor，但须在 message 中说明。
+- related.suggestions 为 string[]，给出可执行整改建议。
+- 若无问题，issues 为 [] 且 passed 为 true。"""
+
+_HPI_IN_TEXT_RE = re.compile(r"\[hpi=(\d+)\]|hpi\s*[:=]\s*(\d+)", re.IGNORECASE)
 
 _BASIS_ALLOWED_CATEGORIES = {"现行缺失", "废止误引"}
 _BASIS_MISSING_EVIDENCE = "文档全文及表格中未发现该规范的名称或编号。"
@@ -141,6 +180,76 @@ def _structure_issues_to_report(structure_raw: list[dict[str, Any]]) -> ReportSt
     )
 
 
+def _coerce_int_hpi(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value == int(value):
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _extract_hpi_from_text(text: str) -> int | None:
+    for m in _HPI_IN_TEXT_RE.finditer(text or ""):
+        g = m.group(1) or m.group(2)
+        if g and g.isdigit():
+            return int(g)
+    return None
+
+
+def _coerce_raw_issue_anchor(it: dict[str, Any]) -> dict[str, Any]:
+    """Normalize LLM issue dict into anchor fields (full-document and legacy shapes)."""
+    anchor: dict[str, Any] = {}
+    extra = it.get("anchor")
+    if isinstance(extra, dict):
+        anchor.update(extra)
+
+    for key in ("heading_para_index", "title_path", "user_title", "template_node_id"):
+        if key in it and it[key] is not None and key not in anchor:
+            anchor[key] = it[key]
+
+    hpi = _coerce_int_hpi(anchor.get("heading_para_index"))
+    if hpi is not None:
+        anchor["heading_para_index"] = hpi
+    elif "heading_para_index" in anchor:
+        del anchor["heading_para_index"]
+
+    path = parse_title_path_value(anchor.get("title_path"))
+    if path:
+        anchor["title_path"] = path
+
+    rel = it.get("related")
+    if not isinstance(rel, dict):
+        return anchor
+
+    loc = rel.get("location")
+    if isinstance(loc, str) and loc.strip():
+        loc_path = parse_title_path_value(loc)
+        if loc_path and not anchor.get("title_path"):
+            anchor["title_path"] = loc_path
+    elif isinstance(loc, dict):
+        if anchor.get("heading_para_index") is None:
+            loc_hpi = _coerce_int_hpi(loc.get("heading_para_index"))
+            if loc_hpi is not None:
+                anchor["heading_para_index"] = loc_hpi
+        if not anchor.get("title_path"):
+            loc_path = parse_title_path_value(loc.get("chapter_path")) or parse_title_path_value(
+                loc.get("chapter_text")
+            )
+            if loc_path:
+                anchor["title_path"] = loc_path
+
+    if not anchor.get("title_path"):
+        for key in ("chapter", "chapter_a", "chapter_text", "title_path"):
+            rel_path = parse_title_path_value(rel.get(key))
+            if rel_path:
+                anchor["title_path"] = rel_path
+                break
+
+    return anchor
+
+
 def _normalize_llm_step(
     step_id: str,
     data: dict[str, Any],
@@ -162,10 +271,8 @@ def _normalize_llm_step(
         raw_category = str(it.get("category") or "").strip()
         if raw_category and not str(rel.get("category") or "").strip():
             rel["category"] = raw_category
-        extra_anchor = it.get("anchor")
-        anchor = {**anchor_base}
-        if isinstance(extra_anchor, dict):
-            anchor.update(extra_anchor)
+        coerced_anchor = _coerce_raw_issue_anchor(it)
+        anchor = {**anchor_base, **coerced_anchor}
         issues.append(
             ReportIssue(
                 severity=sev,  # type: ignore[arg-type]
@@ -198,10 +305,12 @@ def _llm_review_execute(
     collect_debug: bool,
     timeout_seconds: float = 120.0,
     timeout_fail_fast: bool = False,
+    system: str | None = None,
 ) -> tuple[ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
     """LLM JSON 审核（不写入 task.review_log）；日志行由调用方在主线程写入。"""
     log_lines: list[LogLine] = []
     debug_entry: dict[str, Any] | None = None
+    system_prompt = system or JSON_SYSTEM
     if collect_debug:
         debug_entry = {
             "step_id": step_id,
@@ -215,7 +324,7 @@ def _llm_review_execute(
         data, usage = chat_json_with_usage(
             db,
             user_message=user_prompt,
-            system=JSON_SYSTEM,
+            system=system_prompt,
             max_tokens=8192,
             timeout=timeout_seconds,
         )
@@ -225,7 +334,7 @@ def _llm_review_execute(
             data, usage = chat_json_with_usage(
                 db,
                 user_message=user_prompt + "\n\n上一输出不是合法 JSON。请只输出一个 JSON 对象，键为 passed, summary, issues。",
-                system=JSON_SYSTEM,
+                system=system_prompt,
                 max_tokens=8192,
                 timeout=timeout_seconds,
             )
@@ -523,14 +632,18 @@ def _review_result_to_json(
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
+def _basis_catalog_from_rows(rows: list[BasisItem]) -> str:
     lines = []
     for r in rows:
         mandatory = "是" if bool(r.is_mandatory) else "否"
         lines.append(
             f"- 文献类型: {r.doc_type} | 标准号: {r.standard_no} | 名称: {r.doc_name} | 效力: {r.effect_status} | 必引: {mandatory}"
         )
-    catalog = "\n".join(lines) if lines else "(编制依据库中暂无记录)"
+    return "\n".join(lines) if lines else "(编制依据库中暂无记录)"
+
+
+def _basis_prompt(full_content: str, rows: list[BasisItem]) -> str:
+    catalog = _basis_catalog_from_rows(rows)
     return (
         "# Role\n"
         "你是一位极其严谨的建筑工程文档合规性审核专家。\n\n"
@@ -736,6 +849,163 @@ def _content_prompt(
         "7. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
         "8. 每条 issue 的 related 中必须给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
+
+
+def _full_document_prompt(
+    doc_text: str,
+    kb_text: str,
+    review_prompt: str,
+    heading_catalog: str,
+) -> str:
+    return (
+        "【文档标题索引】\n"
+        "以下为待审文档全部标题及其段落索引（定位问题时须优先使用 heading_para_index，勿臆造）：\n"
+        f"{heading_catalog}\n\n"
+        "【待审文档全文】\n"
+        "标题行含 [hpi=N] 表示该标题在 Word 中的段落索引，与【文档标题索引】一致。\n"
+        f"{doc_text}\n\n"
+        "【知识库检索片段】\n"
+        f"{kb_text[:FULL_DOCUMENT_KB_CAP] or '(无)'}\n\n"
+        "【通篇审核提示词】\n"
+        f"{review_prompt}\n\n"
+        "【审核逻辑】\n"
+        "1. 严格依据【通篇审核提示词】提取核查项，不得自行新增无关检查项。\n"
+        "2. 在【待审文档全文】中逐项核查；结合【知识库检索片段】做交叉验证。\n"
+        "3. 每条可定位到具体章节的问题，anchor 必须包含 heading_para_index（取自索引或正文 [hpi=N]）"
+        "及 title_path（字符串数组，每级标题一项，须与索引中该 hpi 的完整路径一致）。\n"
+        "4. 若正文出现图示指示语，检查其后是否有“[附图]”行；缺图须输出问题。\n"
+        "5. 对值为“(无)”的输入块不得臆测；证据不足时在 issues 中说明。\n"
+        "6. 仅输出 JSON；issues 需含 message、evidence、anchor、related.suggestions（string[]）。\n"
+        "7. anchor 输出示例：\n"
+        '{"heading_para_index": 128, "title_path": ["六、施工管理及作业人员配备和分工", "4.其他作业人员"]}'
+    )
+
+
+def _extract_title_path_from_issue(issue: ReportIssue) -> list[str]:
+    anchor = issue.anchor if isinstance(issue.anchor, dict) else {}
+    path = parse_title_path_value(anchor.get("title_path"))
+    if path:
+        return path
+
+    related = issue.related if isinstance(issue.related, dict) else {}
+    loc = related.get("location")
+    if isinstance(loc, str) and loc.strip():
+        path = parse_title_path_value(loc)
+        if path:
+            return path
+    if isinstance(loc, dict):
+        path = parse_title_path_value(loc.get("chapter_path"))
+        if path:
+            return path
+        path = parse_title_path_value(loc.get("chapter_text"))
+        if path:
+            return path
+
+    for key in ("chapter", "chapter_a", "chapter_text", "title_path"):
+        path = parse_title_path_value(related.get(key))
+        if path:
+            return path
+
+    for text in (str(issue.message or ""), str(issue.evidence or "")):
+        for line in text.split("\n"):
+            if re.search(r"\s*[>＞]\s*", line):
+                path = parse_title_path_value(line)
+                if path:
+                    return path
+    return []
+
+
+def _extract_hpi_from_issue(issue: ReportIssue) -> int | None:
+    anchor = issue.anchor if isinstance(issue.anchor, dict) else {}
+    hpi = _coerce_int_hpi(anchor.get("heading_para_index"))
+    if hpi is not None:
+        return hpi
+
+    related = issue.related if isinstance(issue.related, dict) else {}
+    loc = related.get("location")
+    if isinstance(loc, dict):
+        hpi = _coerce_int_hpi(loc.get("heading_para_index"))
+        if hpi is not None:
+            return hpi
+
+    for text in (str(issue.evidence or ""), str(issue.message or "")):
+        hpi = _extract_hpi_from_text(text)
+        if hpi is not None:
+            return hpi
+    return None
+
+
+def _write_full_document_location(
+    issue: ReportIssue,
+    *,
+    title_path: list[str],
+    heading_para_index: int | None,
+) -> None:
+    anchor = dict(issue.anchor) if isinstance(issue.anchor, dict) else {}
+    related = dict(issue.related) if isinstance(issue.related, dict) else {}
+
+    anchor["title_path"] = title_path
+    if heading_para_index is not None:
+        anchor["heading_para_index"] = heading_para_index
+    elif "heading_para_index" in anchor:
+        del anchor["heading_para_index"]
+
+    chapter_text = " > ".join(title_path)
+    related["location"] = {
+        "chapter_path": title_path,
+        "chapter_text": chapter_text,
+        "heading_para_index": heading_para_index,
+        "user_title": title_path[-1] if title_path else "",
+    }
+    issue.anchor = anchor
+    issue.related = related
+
+
+def _normalize_full_document_issue(
+    issue: ReportIssue,
+    heading_index: list[UserHeadingEntry],
+) -> None:
+    hpi = _extract_hpi_from_issue(issue)
+    path = _extract_title_path_from_issue(issue)
+    entry = resolve_heading_from_index(heading_index, hpi=hpi, title_path=path or None)
+
+    if entry is not None:
+        _write_full_document_location(
+            issue,
+            title_path=entry["title_path"],
+            heading_para_index=entry["heading_para_index"],
+        )
+        return
+
+    if path:
+        _write_full_document_location(issue, title_path=path, heading_para_index=hpi)
+        return
+
+    if hpi is not None:
+        by_hpi = {e["heading_para_index"]: e for e in heading_index}
+        if hpi in by_hpi:
+            e = by_hpi[hpi]
+            _write_full_document_location(
+                issue,
+                title_path=e["title_path"],
+                heading_para_index=e["heading_para_index"],
+            )
+
+
+def _load_full_document_config(tmpl: SchemeTemplate) -> FullDocumentReviewConfig | None:
+    raw = tmpl.full_document_review_config
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        return FullDocumentReviewConfig.model_validate(data)
+    except Exception:
+        return None
 
 
 def run_review_pipeline(task_id: int) -> None:
@@ -1094,8 +1364,107 @@ def run_review_pipeline(task_id: int) -> None:
                 )
                 report.steps.append(merged)
 
+            elif step_id == "full_document":
+                fd_config = _load_full_document_config(tmpl)
+                rp = (fd_config.review_prompt or "").strip() if fd_config else ""
+                if not rp:
+                    _append_log(db, task, "warning", "通篇审核已启用但未配置提示词，已跳过")
+                    report.steps.append(
+                        ReportStep(
+                            step_id=step_id,
+                            passed=True,
+                            summary="通篇审核未配置提示词，已跳过",
+                            issues=[],
+                        )
+                    )
+                else:
+                    heading_index = build_user_heading_index(user_nodes)
+                    catalog_text, catalog_truncated = format_heading_catalog(
+                        heading_index,
+                        max_entries=FULL_DOCUMENT_HEADING_CATALOG_MAX,
+                    )
+                    if catalog_truncated:
+                        _append_log(
+                            db,
+                            task,
+                            "warning",
+                            f"通篇审核标题索引已截断至 {FULL_DOCUMENT_HEADING_CATALOG_MAX} 条",
+                        )
+                    full_raw = collect_full_document_text(user_nodes)
+                    doc_text = full_raw
+                    if len(full_raw) > FULL_DOCUMENT_TEXT_CAP:
+                        doc_text = full_raw[:FULL_DOCUMENT_TEXT_CAP]
+                        _append_log(
+                            db,
+                            task,
+                            "warning",
+                            f"通篇审核文档正文已截断至 {FULL_DOCUMENT_TEXT_CAP} 字符（原文 {len(full_raw)} 字符）",
+                        )
+                    kb_text = ""
+                    ds = fd_config.dify_dataset_id if fd_config else None
+                    if ds and dify_url and dify_key:
+                        kws = fd_config.knowledge_keywords if fd_config else []
+                        qparts: list[str] = []
+                        if isinstance(kws, list):
+                            qparts.extend(str(x).strip() for x in kws if str(x).strip())
+                        if not qparts:
+                            qparts.append(name or category or "方案审核")
+                        query = " ".join(qparts)[:250]
+                        try:
+                            kb_text = retrieve_dataset_chunks(
+                                dify_url, dify_key, str(ds), query
+                            )
+                        except Exception as e:
+                            _append_log(
+                                db,
+                                task,
+                                "warning",
+                                f"通篇审核知识库检索跳过 dataset={ds}: {e!s}",
+                            )
+                    prompt = _full_document_prompt(
+                        doc_text, kb_text, rp, catalog_text
+                    )
+                    fd_timeout = float(max(180, review_timeout_seconds))
+                    sub, usage, log_lines, dbg = _llm_review_execute(
+                        db,
+                        step_id=step_id,
+                        user_prompt=prompt,
+                        anchor_base={},
+                        collect_debug=prompt_debug_enabled,
+                        timeout_seconds=fd_timeout,
+                        timeout_fail_fast=False,
+                        system=FULL_DOCUMENT_JSON_SYSTEM,
+                    )
+                    for level, msg in log_lines:
+                        _append_log(db, task, level, msg)
+                    _merge_usage(token_usage_total, usage)
+                    _write_usage_snapshot(task, token_usage_total)
+                    if dbg is not None and debug_prompts is not None:
+                        debug_prompts.append(dbg)
+                    unlocated = 0
+                    for issue in sub.issues:
+                        _normalize_full_document_issue(issue, heading_index)
+                        loc = (issue.related or {}).get("location") if isinstance(issue.related, dict) else None
+                        chapter_text = ""
+                        if isinstance(loc, dict):
+                            chapter_text = str(loc.get("chapter_text") or "").strip()
+                        if not chapter_text:
+                            unlocated += 1
+                    if sub.issues:
+                        _append_log(
+                            db,
+                            task,
+                            "info",
+                            f"通篇审核定位：{len(sub.issues) - unlocated}/{len(sub.issues)} 条已解析章节路径",
+                        )
+                    sub.summary = sub.summary or (
+                        "通篇审核通过" if sub.passed else f"发现 {len(sub.issues)} 条通篇问题"
+                    )
+                    report.steps.append(sub)
+                    db.commit()
+
         task.review_stage = None
-        _append_log(db, task, "info", "内容审核阶段结束，开始生成审核报告")
+        _append_log(db, task, "info", "审核步骤结束，开始生成审核报告")
         db.commit()
         task.review_result_json = _review_result_to_json(
             report,

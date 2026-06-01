@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic } from '../api/types'
 import PageShell from '../components/PageShell'
+import FullDocumentReviewModal from '../components/FullDocumentReviewModal'
 import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 import {
@@ -68,6 +69,9 @@ export default function TemplatesPage() {
   const [workflowScheme, setWorkflowScheme] = useState<SchemeType | null>(null)
   const [workflowTemplate, setWorkflowTemplate] = useState<TemplatePublic | null>(null)
   const [workflowLoading, setWorkflowLoading] = useState(false)
+  const [fullDocScheme, setFullDocScheme] = useState<SchemeType | null>(null)
+  const [fullDocTemplate, setFullDocTemplate] = useState<TemplatePublic | null>(null)
+  const [fullDocLoading, setFullDocLoading] = useState(false)
   const [preview, setPreview] = useState<TemplatePublic | null>(null)
   const [structureDraft, setStructureDraft] = useState<{ nodes: TemplateNode[] } | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -217,7 +221,7 @@ export default function TemplatesPage() {
           {
             title: '操作',
             key: 'actions',
-            width: 360,
+            width: 440,
             fixed: 'right',
             render: (_: unknown, row: SchemeType) => (
               <Space size="small" wrap={false} style={{ whiteSpace: 'nowrap' }}>
@@ -238,6 +242,26 @@ export default function TemplatesPage() {
                   }}
                 >
                   规则设置
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    setFullDocScheme(row)
+                    setFullDocLoading(true)
+                    setFullDocTemplate(null)
+                    try {
+                      const { data } = await api.get<TemplatePublic>(
+                        `/scheme-types/${row.id}/template`,
+                      )
+                      setFullDocTemplate(data)
+                    } catch {
+                      message.warning('该方案尚未上传模版')
+                    } finally {
+                      setFullDocLoading(false)
+                    }
+                  }}
+                >
+                  通篇审核
                 </Button>
                 <Button
                   size="small"
@@ -464,6 +488,20 @@ export default function TemplatesPage() {
         onClose={() => {
           setWorkflowScheme(null)
           setWorkflowTemplate(null)
+        }}
+        onSaved={() => {
+          void qc.invalidateQueries({ queryKey: ['schemes'] })
+        }}
+      />
+
+      <FullDocumentReviewModal
+        open={!!fullDocScheme}
+        scheme={fullDocScheme}
+        template={fullDocTemplate}
+        loading={fullDocLoading}
+        onClose={() => {
+          setFullDocScheme(null)
+          setFullDocTemplate(null)
         }}
         onSaved={() => {
           void qc.invalidateQueries({ queryKey: ['schemes'] })

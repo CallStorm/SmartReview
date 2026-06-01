@@ -47,6 +47,7 @@ const REVIEW_STAGE_LABELS: Record<string, string> = {
   compilation_basis: '编制依据审核',
   context_consistency: '上下文一致性',
   content: '内容审核',
+  full_document: '通篇审核',
 }
 
 const tagSx = { border: 'none', marginInlineEnd: 0 } as const
@@ -72,7 +73,7 @@ function statusTag(status: string) {
 function taskStatusCell(row: ReviewTask) {
   if (row.status === 'processing' && row.review_stage) {
     const label = REVIEW_STAGE_LABELS[row.review_stage] ?? row.review_stage
-    if (row.review_stage === 'content') {
+    if (row.review_stage === 'content' || row.review_stage === 'full_document') {
       return pillTag(label, '#fff7e6', '#d46b08')
     }
     return pillTag(label, '#e6f4ff', '#0958d9')

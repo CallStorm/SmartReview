@@ -9,6 +9,7 @@ const LABELS: Record<WorkflowStepId, string> = {
   compilation_basis: '编制依据',
   context_consistency: '上下文一致性',
   content: '内容审核',
+  full_document: '通篇审核',
   end: '结束',
 }
 
@@ -18,6 +19,7 @@ const SLOT_ORDER: WorkflowStepId[] = [
   'compilation_basis',
   'context_consistency',
   'content',
+  'full_document',
   'end',
 ]
 
@@ -26,6 +28,7 @@ function compileSteps(
   includeContext: boolean,
   includeContent: boolean,
   contentBeforeContext: boolean,
+  includeFullDocument: boolean,
 ): WorkflowStepId[] {
   const mid: WorkflowStepId[] = []
   if (includeBasis) mid.push('compilation_basis')
@@ -34,6 +37,7 @@ function compileSteps(
     else mid.push('context_consistency', 'content')
   } else if (includeContext) mid.push('context_consistency')
   else if (includeContent) mid.push('content')
+  if (includeFullDocument) mid.push('full_document')
   return ['start', 'structure', ...mid, 'end']
 }
 
@@ -45,22 +49,30 @@ function isValidServerSteps(raw: unknown): raw is WorkflowStepId[] {
     'compilation_basis',
     'context_consistency',
     'content',
+    'full_document',
     'end',
   ])
   if (raw.some((x) => typeof x !== 'string' || !allowed.has(x))) return false
   if (raw[0] !== 'start' || raw[1] !== 'structure' || raw[raw.length - 1] !== 'end') return false
   if (new Set(raw).size !== raw.length) return false
   const mid = raw.slice(2, -1)
-  const optMid = new Set(['compilation_basis', 'context_consistency', 'content'])
+  const optMid = new Set([
+    'compilation_basis',
+    'context_consistency',
+    'content',
+    'full_document',
+  ])
   if (mid.some((m) => !optMid.has(m))) return false
-  if (mid.filter((m) => m === 'compilation_basis').length > 1) return false
   if (mid.includes('compilation_basis') && mid[0] !== 'compilation_basis') return false
-  const rest = mid.filter((m) => m !== 'compilation_basis')
-  if (rest.length === 2) {
-    const s = new Set(rest)
+  if (mid.includes('full_document') && mid[mid.length - 1] !== 'full_document') return false
+  const core = mid.filter((m) => m !== 'compilation_basis' && m !== 'full_document')
+  if (core.length === 2) {
+    const s = new Set(core)
     if (s.size !== 2 || !s.has('context_consistency') || !s.has('content')) return false
-  } else if (rest.length === 1) {
-    if (rest[0] !== 'context_consistency' && rest[0] !== 'content') return false
+  } else if (core.length === 1) {
+    if (core[0] !== 'context_consistency' && core[0] !== 'content') return false
+  } else if (core.length > 2) {
+    return false
   }
   return true
 }
@@ -70,22 +82,31 @@ function parseSteps(steps: WorkflowStepId[]): {
   includeContext: boolean
   includeContent: boolean
   contentBeforeContext: boolean
+  includeFullDocument: boolean
 } {
   const includeBasis = steps.includes('compilation_basis')
   const includeContext = steps.includes('context_consistency')
   const includeContent = steps.includes('content')
+  const includeFullDocument = steps.includes('full_document')
   let contentBeforeContext = false
   if (includeContext && includeContent) {
     contentBeforeContext = steps.indexOf('content') < steps.indexOf('context_consistency')
   }
-  return { includeBasis, includeContext, includeContent, contentBeforeContext }
+  return {
+    includeBasis,
+    includeContext,
+    includeContent,
+    contentBeforeContext,
+    includeFullDocument,
+  }
 }
 
-const ROW_CENTERS = [44, 118, 192, 266, 340, 414]
+const ROW_CENTERS = [36, 100, 164, 228, 292, 356, 420]
 const CANVAS_W = 440
 const CX = CANVAS_W / 2
-const CARD_H = 52
+const CARD_H = 48
 const HALF = CARD_H / 2
+const CANVAS_H = 468
 
 type Props = {
   open: boolean
@@ -119,7 +140,7 @@ function WorkflowCanvas({ steps }: { steps: WorkflowStepId[] }) {
       style={{
         position: 'relative',
         width: CANVAS_W,
-        minHeight: 452,
+        minHeight: CANVAS_H,
         margin: '0 auto',
         background:
           'linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)',
@@ -130,7 +151,7 @@ function WorkflowCanvas({ steps }: { steps: WorkflowStepId[] }) {
     >
       <svg
         width={CANVAS_W}
-        height={452}
+        height={CANVAS_H}
         style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}
       >
         <defs>
@@ -162,7 +183,10 @@ function WorkflowCanvas({ steps }: { steps: WorkflowStepId[] }) {
       {SLOT_ORDER.map((id, idx) => {
         const inPath = active.has(id)
         const optional =
-          id === 'compilation_basis' || id === 'context_consistency' || id === 'content'
+          id === 'compilation_basis' ||
+          id === 'context_consistency' ||
+          id === 'content' ||
+          id === 'full_document'
         const dim = optional && !inPath
         const top = ROW_CENTERS[idx] - HALF
         return (
@@ -209,6 +233,7 @@ export default function ReviewWorkflowModal({
   const [includeContext, setIncludeContext] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
   const [contentBeforeContext, setContentBeforeContext] = useState(false)
+  const [includeFullDocument, setIncludeFullDocument] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -220,17 +245,26 @@ export default function ReviewWorkflowModal({
       setIncludeContext(p.includeContext)
       setIncludeContent(p.includeContent)
       setContentBeforeContext(p.contentBeforeContext)
+      setIncludeFullDocument(p.includeFullDocument)
     } else {
       setIncludeBasis(false)
       setIncludeContext(false)
       setIncludeContent(false)
       setContentBeforeContext(false)
+      setIncludeFullDocument(false)
     }
   }, [open, template?.id, template?.updated_at, template?.review_workflow])
 
   const steps = useMemo(
-    () => compileSteps(includeBasis, includeContext, includeContent, contentBeforeContext),
-    [includeBasis, includeContext, includeContent, contentBeforeContext],
+    () =>
+      compileSteps(
+        includeBasis,
+        includeContext,
+        includeContent,
+        contentBeforeContext,
+        includeFullDocument,
+      ),
+    [includeBasis, includeContext, includeContent, contentBeforeContext, includeFullDocument],
   )
 
   async function handleSave() {
@@ -276,7 +310,7 @@ export default function ReviewWorkflowModal({
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            起点与结构审核必选；编制依据可选且位于中间步骤最前；可再开启上下文/内容并调整二者顺序
+            起点与结构审核必选；编制依据可选且位于最前；通篇审核可选且位于最后；上下文/内容可调整顺序
           </Typography.Text>
           <Space>
             <Button onClick={onClose}>取消</Button>
@@ -320,6 +354,10 @@ export default function ReviewWorkflowModal({
                   </Button>
                 </div>
               ) : null}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography.Text>{LABELS.full_document}</Typography.Text>
+                <Switch checked={includeFullDocument} onChange={setIncludeFullDocument} />
+              </div>
             </Space>
           </div>
         </div>
