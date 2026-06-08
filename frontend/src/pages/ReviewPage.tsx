@@ -7,6 +7,7 @@ import {
   ExportOutlined,
   FileSearchOutlined,
   FileTextOutlined,
+  ProfileOutlined,
   UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
@@ -33,7 +34,10 @@ import type { ReviewTask, SchemeType } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
-import { buildReviewExportFilename } from '../utils/reviewExportFilename'
+import {
+  buildAuditReportFilename,
+  buildReviewExportFilename,
+} from '../utils/reviewExportFilename'
 
 const statusLabel: Record<string, string> = {
   pending: '排队中',
@@ -118,6 +122,19 @@ async function downloadWordV2(taskId: number, downloadName: string): Promise<voi
   const res = await fetch(data.url)
   if (!res.ok) throw new Error('下载失败')
   const blob = await res.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = downloadName
+  a.rel = 'noopener'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+async function downloadAuditReport(taskId: number, downloadName: string): Promise<void> {
+  const { data } = await api.get<Blob>(`/review-tasks/${taskId}/audit-report`, {
+    responseType: 'blob',
+  })
+  const blob = data instanceof Blob ? data : new Blob([data])
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = downloadName
@@ -298,6 +315,20 @@ export default function ReviewPage() {
     }
   }
 
+  const handleAuditReportExport = async (row: ReviewTask) => {
+    if (row.status !== 'succeeded' && row.status !== 'failed') {
+      message.warning('任务尚未完成，暂无法导出审核报告')
+      return
+    }
+    try {
+      const name = buildAuditReportFilename(row.original_filename)
+      await downloadAuditReport(row.id, name)
+      message.success(`已开始下载 ${name}`)
+    } catch {
+      message.error('导出审核报告失败')
+    }
+  }
+
   return (
     <div className="review-page">
       <PageShell
@@ -420,7 +451,7 @@ export default function ReviewPage() {
             {
               title: '操作',
               key: 'act',
-              width: isAdmin ? 460 : 220,
+              width: isAdmin ? 560 : 320,
               render: (_, row) => {
                 const taskEnded =
                   row.status === 'succeeded' || row.status === 'failed'
@@ -453,6 +484,23 @@ export default function ReviewPage() {
                         审核日志
                       </Button>
                     ) : null}
+                    <Tooltip
+                      title={
+                        taskEnded
+                          ? undefined
+                          : '任务处理结束后（已完成或失败）可导出审核报告'
+                      }
+                    >
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<ProfileOutlined />}
+                        disabled={!taskEnded}
+                        onClick={() => void handleAuditReportExport(row)}
+                      >
+                        审核报告
+                      </Button>
+                    </Tooltip>
                     <Button
                       type="link"
                       size="small"
@@ -460,7 +508,7 @@ export default function ReviewPage() {
                       disabled={!row.output_object_key?.trim()}
                       onClick={() => void handleExport(row)}
                     >
-                      导出报告
+                      导出方案
                     </Button>
                     {isAdmin ? (
                       <Popconfirm

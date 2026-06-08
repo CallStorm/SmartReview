@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import quote
@@ -18,6 +19,7 @@ from app.schemas.onlyoffice_editor import OnlyofficeEditorConfigResponse
 from app.schemas.review_task import DebugPromptPublic, ReviewTaskCreateResponse, ReviewTaskPublic
 from app.schemas.template import DownloadUrlResponse
 from app.services import minio_storage
+from app.schemas.review_report import ReviewReportV1
 from app.services.onlyoffice import (
     assert_onlyoffice_ready,
     build_editor_config,
@@ -25,10 +27,28 @@ from app.services.onlyoffice import (
     make_file_access_token,
     verify_file_access_token,
 )
+from app.services.review_report_docx import build_audit_report_docx
+from app.services.review_settings import DEFAULT_SYSTEM_NAME, get_or_create_review_settings
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
 
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+
+
+def _audit_report_filename(original_filename: str) -> str:
+    raw = (original_filename or "").strip() or "document"
+    base = re.sub(r"\.docx$", "", raw, flags=re.IGNORECASE).strip() or "document"
+    safe = re.sub(r'[\\/:*?"<>|]', "_", base).strip() or "document"
+    return f"{safe}_审核报告.docx"
+
+
+def _parse_review_report_json(raw: str | None) -> ReviewReportV1 | None:
+    if not (raw or "").strip():
+        return None
+    try:
+        return ReviewReportV1.model_validate(json.loads(raw))
+    except Exception:
+        return None
 
 
 def _task_public(
@@ -159,6 +179,45 @@ def delete_task(
         minio_storage.remove_object_if_exists(t.output_object_key.strip())
     db.delete(t)
     db.commit()
+
+
+@router.get("/{task_id}/audit-report")
+def download_audit_report(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    t = (
+        db.query(SchemeReviewTask)
+        .options(joinedload(SchemeReviewTask.scheme_type))
+        .filter(SchemeReviewTask.id == task_id)
+        .first()
+    )
+    if t is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if t.user_id != user.id and user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="无权下载该任务报告")
+    if t.status in (ReviewTaskStatus.pending, ReviewTaskStatus.processing):
+        raise HTTPException(status_code=409, detail="任务尚未完成，暂无法导出审核报告")
+    report = _parse_review_report_json(t.review_result_json)
+    if report is None or not report.steps:
+        raise HTTPException(status_code=404, detail="暂无审核报告数据")
+    settings = get_or_create_review_settings(db)
+    system_name = (settings.system_name or "").strip() or DEFAULT_SYSTEM_NAME
+    content = build_audit_report_docx(t, report, system_name=system_name)
+    filename = _audit_report_filename(t.original_filename)
+    ascii_fallback = "audit-report.docx"
+    encoded_name = quote(filename, safe="")
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{encoded_name}"
+            )
+        },
+    )
 
 
 @router.get("/{task_id}/output-download-url", response_model=DownloadUrlResponse)
