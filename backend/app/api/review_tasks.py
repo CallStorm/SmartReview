@@ -236,9 +236,12 @@ def get_output_download_url(
         raise HTTPException(status_code=404, detail="任务不存在")
     if t.user_id != user.id and user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="无权下载该任务文件")
-    if not (t.output_object_key or "").strip():
-        raise HTTPException(status_code=404, detail="暂无带批注的文档（任务未完成或结构审核未通过）")
-    url = minio_storage.presigned_get_url(t.output_object_key.strip(), expires_seconds=3600)
+    if t.status in (ReviewTaskStatus.pending, ReviewTaskStatus.processing):
+        raise HTTPException(status_code=409, detail="任务尚未完成，暂无法导出")
+    object_key = (t.output_object_key or "").strip() or (t.object_key or "").strip()
+    if not object_key:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    url = minio_storage.presigned_get_url(object_key, expires_seconds=3600)
     return DownloadUrlResponse(url=url, expires_seconds=3600)
 
 

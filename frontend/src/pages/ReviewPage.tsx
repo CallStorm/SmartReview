@@ -302,8 +302,8 @@ export default function ReviewPage() {
   }
 
   const handleExport = async (row: ReviewTask) => {
-    if (!row.output_object_key?.trim()) {
-      message.warning('暂无带批注文档（任务未完成或结构审核未通过）')
+    if (row.status !== 'succeeded' && row.status !== 'failed') {
+      message.warning('任务尚未完成，暂无法导出方案')
       return
     }
     try {
@@ -501,15 +501,23 @@ export default function ReviewPage() {
                         审核报告
                       </Button>
                     </Tooltip>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<ExportOutlined />}
-                      disabled={!row.output_object_key?.trim()}
-                      onClick={() => void handleExport(row)}
+                    <Tooltip
+                      title={
+                        taskEnded
+                          ? undefined
+                          : '任务处理结束后（已完成或失败）可导出方案'
+                      }
                     >
-                      导出方案
-                    </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<ExportOutlined />}
+                        disabled={!taskEnded}
+                        onClick={() => void handleExport(row)}
+                      >
+                        导出方案
+                      </Button>
+                    </Tooltip>
                     {isAdmin ? (
                       <Popconfirm
                         title="删除该审核任务？"

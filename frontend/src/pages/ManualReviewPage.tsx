@@ -273,6 +273,8 @@ export default function ManualReviewPage() {
   const steps: ReportStep[] = report?.steps ?? []
 
   const canExport = Boolean(task?.output_object_key?.trim())
+  const taskEnded =
+    task?.status === 'succeeded' || task?.status === 'failed'
 
   const handleExport = async () => {
     if (!task) return
@@ -381,7 +383,7 @@ export default function ManualReviewPage() {
           <Button
             type="primary"
             icon={<DownloadOutlined />}
-            disabled={!canExport}
+            disabled={!taskEnded}
             onClick={() => void handleExport()}
           >
             导出 Word
