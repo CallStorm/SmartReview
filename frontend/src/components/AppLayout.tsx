@@ -3,6 +3,7 @@ import './AppLayout.css'
 import {
   AppstoreOutlined,
   BarChartOutlined,
+  BookOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   FormOutlined,
@@ -31,6 +32,7 @@ function resolveMenuSelectedKey(pathname: string): string {
   if (pathname.startsWith('/templates')) return '/templates'
   if (pathname.startsWith('/users')) return '/users'
   if (pathname.startsWith('/settings')) return '/settings'
+  if (pathname.startsWith('/help')) return '/help'
   return pathname
 }
 
@@ -52,7 +54,10 @@ export default function AppLayout() {
     ]
 
     if (user?.role !== 'admin') {
-      return [{ key: '/review', icon: <FileSearchOutlined />, label: '方案审核' }]
+      return [
+        { key: '/review', icon: <FileSearchOutlined />, label: '方案审核' },
+        { key: '/help', icon: <BookOutlined />, label: '使用帮助' },
+      ]
     }
 
     return [
@@ -76,6 +81,13 @@ export default function AppLayout() {
           { key: '/templates', icon: <FormOutlined />, label: '模板管理' },
           { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
           { key: '/settings', icon: <SettingOutlined />, label: '设置' },
+        ],
+      },
+      {
+        type: 'group',
+        label: '支持',
+        children: [
+          { key: '/help', icon: <BookOutlined />, label: '使用帮助' },
         ],
       },
     ]

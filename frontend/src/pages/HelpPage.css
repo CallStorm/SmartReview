@@ -1,0 +1,84 @@
+.help-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.help-page__card .ant-card-head-title {
+  font-weight: 600;
+}
+
+.help-guide-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.help-guide-list > li + li {
+  margin-top: 12px;
+}
+
+.help-guide-list__text {
+  margin: 4px 0 0 !important;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.help-video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.help-video-item__title {
+  margin: 0 0 4px !important;
+}
+
+.help-video-item__desc {
+  margin-bottom: 12px !important;
+}
+
+.help-video-player {
+  max-width: 960px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.help-video-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.help-download-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.help-download-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.help-download-item__title {
+  margin: 0 0 4px !important;
+}
+
+.help-download-item__desc {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 640px) {
+  .help-download-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
