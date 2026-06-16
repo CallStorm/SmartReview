@@ -39,15 +39,11 @@ function structureKind(issue: ReportIssue): string {
 
 function aggregateStructureIssues(issues: ReportIssue[]) {
   let missing = 0
-  let order = 0
-  let extra = 0
   for (const it of issues) {
     const k = structureKind(it)
     if (k === 'missing_section') missing += 1
-    else if (k === 'order_mismatch') order += 1
-    else if (k === 'extra_section') extra += 1
   }
-  return { missing, order, extra, total: issues.length }
+  return { missing, total: issues.length }
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -182,8 +178,6 @@ export default function StructureReviewDetail({
     ? '审核结果：文档结构符合模板要求'
     : `审核结果：文档结构不合规（共 ${stats.total} 项问题${
         stats.missing ? `，缺失 ${stats.missing} 项` : ''
-      }${stats.order ? `，顺序问题 ${stats.order} 项` : ''}${
-        stats.extra ? `，多余章节 ${stats.extra} 项` : ''
       }）`
 
   const templateModalBody =
@@ -325,18 +319,15 @@ export default function StructureReviewDetail({
           const kind = structureKind(it)
           const path = asStringArray(it.anchor?.title_path)
           const pathStr = path.join(' > ')
-          const expectedTitle =
-            kind === 'extra_section'
-              ? '（模板不要求此位置出现该章节）'
-              : pathStr || '—'
-          const userTitle =
-            typeof it.anchor?.user_title === 'string'
-              ? it.anchor.user_title
-              : ''
+          const expectedTitle = pathStr || '—'
           let docLine = it.message
           if (kind === 'missing_section') {
             docLine = '未在文档中找到与模板对应的章节标题'
           } else if (kind === 'extra_section') {
+            const userTitle =
+              typeof it.anchor?.user_title === 'string'
+                ? it.anchor.user_title
+                : ''
             docLine = userTitle
               ? `文档中出现：「${userTitle}」`
               : '文档中多出章节'

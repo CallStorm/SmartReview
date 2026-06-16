@@ -34,7 +34,7 @@ _STRUCTURE_KIND_LABEL: dict[str, str] = {
 }
 
 _STEP_DESCRIPTION: dict[str, str] = {
-    "structure": "对照模版检查方案章节结构是否完整、顺序是否正确。",
+    "structure": "对照模版检查必备章节是否齐全（多余章节与章节顺序不校验）。",
     "compilation_basis": "审核方案编制依据是否完整覆盖现行必引规范，并识别废止误引。",
     "context_consistency": "检查方案各章节之间参数、描述是否前后一致。",
     "content": "按模版节点逐项核查章节内容是否满足审核要求。",

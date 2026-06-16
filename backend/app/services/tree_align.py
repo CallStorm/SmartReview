@@ -1,4 +1,4 @@
-"""Align user document tree to template tree by heading titles (same level order)."""
+"""Align user document tree to template tree by heading titles."""
 
 from __future__ import annotations
 
@@ -69,8 +69,7 @@ def align_template_user_trees(
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     """
     Returns (template_id -> user_node, structure_issues).
-    Each issue: kind in missing_section|extra_section|order_mismatch, message, template_node_id,
-    user_title, title_path, heading_para_index (when applicable).
+    Each issue: kind in missing_section, message, template_node_id, title_path.
 
     Comparison depth follows the **template** only:
 
@@ -78,7 +77,9 @@ def align_template_user_trees(
       of outline levels as the template participate in matching (extra deeper headings are
       ignored for structure checks).
     - If a template node has no children, any further headings under the matched user node
-      are ignored (not reported as extra sections).
+      are ignored.
+    - User sections not required by the template are silently skipped (never reported).
+    - Chapter order is not validated; only whether each template section exists.
     """
     path_prefix = path_prefix or []
     original_user_nodes = user_nodes
@@ -90,17 +91,28 @@ def align_template_user_trees(
     original_nodes_by_hpi: dict[int, dict[str, Any]] = {}
     _index_nodes_by_heading_para(original_user_nodes, original_nodes_by_hpi)
 
+    def _map_user_node(tid: str, uc: dict[str, Any]) -> None:
+        if not tid:
+            return
+        hpi = uc.get("heading_para_index")
+        if isinstance(hpi, int) and hpi in original_nodes_by_hpi:
+            mapping[tid] = original_nodes_by_hpi[hpi]
+        else:
+            mapping[tid] = uc
+
     def walk(
         t_children: list[dict[str, Any]],
         u_children: list[dict[str, Any]],
         path: list[str],
     ) -> None:
-        ui = 0
+        used: set[int] = set()
         for tc in t_children:
             tid = str(tc.get("id") or "")
             want = _node_title(tc)
             found_j: int | None = None
-            for j in range(ui, len(u_children)):
+            for j in range(len(u_children)):
+                if j in used:
+                    continue
                 if _node_title(u_children[j]) == want:
                     found_j = j
                     break
@@ -114,55 +126,14 @@ def align_template_user_trees(
                     }
                 )
                 continue
-            for k in range(ui, found_j):
-                ut = _node_title(u_children[k])
-                hpi = u_children[k].get("heading_para_index")
-                issues.append(
-                    {
-                        "kind": "extra_section",
-                        "message": f"多余章节：{ut}",
-                        "user_title": ut,
-                        "title_path": path + [ut],
-                        "heading_para_index": hpi,
-                    }
-                )
-            if found_j > ui:
-                issues.append(
-                    {
-                        "kind": "order_mismatch",
-                        "message": f"章节顺序与模板不一致：期望「{want}」前存在未对齐的段落",
-                        "template_node_id": tid,
-                        "title_path": path + [want],
-                        "heading_para_index": u_children[found_j].get("heading_para_index"),
-                    }
-                )
+            used.add(found_j)
             uc = u_children[found_j]
-            if tid:
-                hpi = uc.get("heading_para_index")
-                if isinstance(hpi, int) and hpi in original_nodes_by_hpi:
-                    mapping[tid] = original_nodes_by_hpi[hpi]
-                else:
-                    # Fallback to the compared node if index lookup is unavailable.
-                    mapping[tid] = uc
+            _map_user_node(tid, uc)
             next_t = tc.get("children") or []
             if not next_t:
-                # Template ends here: deeper headings in the user file are out of scope.
                 walk([], [], path + [want])
             else:
                 walk(next_t, uc.get("children") or [], path + [want])
-            ui = found_j + 1
-        for k in range(ui, len(u_children)):
-            ut = _node_title(u_children[k])
-            hpi = u_children[k].get("heading_para_index")
-            issues.append(
-                {
-                    "kind": "extra_section",
-                    "message": f"多余章节：{ut}",
-                    "user_title": ut,
-                    "title_path": path + [ut],
-                    "heading_para_index": hpi,
-                }
-            )
 
     walk(template_nodes, user_nodes, path_prefix)
     return mapping, issues
