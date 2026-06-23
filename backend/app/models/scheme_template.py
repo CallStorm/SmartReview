@@ -29,6 +29,9 @@ class SchemeTemplate(Base):
     parsed_structure: Mapped[str | None] = mapped_column(Text, nullable=True)
     review_workflow: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_document_review_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    structure_match_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="exact", default="exact"
+    )
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
