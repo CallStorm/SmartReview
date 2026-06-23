@@ -23,6 +23,7 @@ class ReportStep(BaseModel):
     passed: bool
     summary: str = ""
     issues: list[ReportIssue] = Field(default_factory=list)
+    mappings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReviewReportV1(BaseModel):
