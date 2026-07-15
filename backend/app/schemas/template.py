@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -70,6 +70,10 @@ class ReviewWorkflowUpdate(BaseModel):
     review_workflow: ReviewWorkflowData
 
 
+class StructureMatchModeUpdate(BaseModel):
+    mode: Literal["exact", "fuzzy"]
+
+
 class TemplateStructureUpdate(BaseModel):
     """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/编制依据开关/上下文一致性比对与一致性提示词等配置）。"""
 
@@ -85,6 +89,7 @@ class TemplatePublic(BaseModel):
     parsed_structure: Any | None = None
     review_workflow: dict[str, Any] | None = None
     full_document_review_config: dict[str, Any] | None = None
+    structure_match_mode: str = "exact"
     parsed_at: datetime | None
     updated_at: datetime | None
 

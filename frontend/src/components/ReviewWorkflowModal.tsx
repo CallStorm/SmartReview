@@ -1,7 +1,13 @@
-import { App as AntApp, Button, Modal, Space, Switch, Typography } from 'antd'
+import { App as AntApp, Button, Modal, Radio, Space, Switch, Typography } from 'antd'
+import type { RadioChangeEvent } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
-import type { ReviewWorkflowData, TemplatePublic, WorkflowStepId } from '../api/types'
+import type {
+  ReviewWorkflowData,
+  StructureMatchMode,
+  TemplatePublic,
+  WorkflowStepId,
+} from '../api/types'
 
 const LABELS: Record<WorkflowStepId, string> = {
   start: '起点',
@@ -234,6 +240,8 @@ export default function ReviewWorkflowModal({
   const [includeContent, setIncludeContent] = useState(false)
   const [contentBeforeContext, setContentBeforeContext] = useState(false)
   const [includeFullDocument, setIncludeFullDocument] = useState(false)
+  const [matchMode, setMatchMode] = useState<StructureMatchMode>('exact')
+  const [modeSaving, setModeSaving] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -253,7 +261,8 @@ export default function ReviewWorkflowModal({
       setContentBeforeContext(false)
       setIncludeFullDocument(false)
     }
-  }, [open, template?.id, template?.updated_at, template?.review_workflow])
+    setMatchMode(template.structure_match_mode === 'fuzzy' ? 'fuzzy' : 'exact')
+  }, [open, template?.id, template?.updated_at, template?.review_workflow, template?.structure_match_mode])
 
   const steps = useMemo(
     () =>
@@ -266,6 +275,27 @@ export default function ReviewWorkflowModal({
       ),
     [includeBasis, includeContext, includeContent, contentBeforeContext, includeFullDocument],
   )
+
+  async function handleSaveMatchMode(next: StructureMatchMode) {
+    setModeSaving(true)
+    try {
+      const { data } = await api.patch<TemplatePublic>(
+        `/scheme-types/${schemeTypeId}/template/structure-match-mode`,
+        { mode: next },
+      )
+      message.success('结构匹配模式已保存')
+      onSaved(data)
+    } catch (err: unknown) {
+      const raw =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+          : undefined
+      message.error(typeof raw === 'string' ? raw : '保存失败')
+      setMatchMode(next === 'fuzzy' ? 'exact' : 'fuzzy')
+    } finally {
+      setModeSaving(false)
+    }
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -357,6 +387,27 @@ export default function ReviewWorkflowModal({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography.Text>{LABELS.full_document}</Typography.Text>
                 <Switch checked={includeFullDocument} onChange={setIncludeFullDocument} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <Typography.Text>结构匹配模式</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                    模糊模式允许序号、标点、措辞差异，缺章节仍判不合规
+                  </Typography.Text>
+                </div>
+                <Radio.Group
+                  size="small"
+                  value={matchMode}
+                  disabled={modeSaving || loading || !template}
+                  onChange={(e: RadioChangeEvent) => {
+                    const v = e.target.value as StructureMatchMode
+                    setMatchMode(v)
+                    void handleSaveMatchMode(v)
+                  }}
+                >
+                  <Radio.Button value="exact">精确</Radio.Button>
+                  <Radio.Button value="fuzzy">模糊（语义）</Radio.Button>
+                </Radio.Group>
               </div>
             </Space>
           </div>

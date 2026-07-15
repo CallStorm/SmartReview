@@ -9,12 +9,14 @@ import {
   Modal,
   Row,
   Space,
+  Table,
   Tag,
   Timeline,
   Tooltip,
   Tree,
   Typography,
 } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import type { DataNode } from 'antd/es/tree'
 import type { CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -24,6 +26,7 @@ import type {
   ReportIssue,
   ReportStep,
   ReviewTask,
+  StructureMapping,
   TemplateNode,
   TemplatePublic,
 } from '../api/types'
@@ -56,6 +59,20 @@ const KIND_DETAIL: Record<string, string> = {
   missing_section: '必备章节缺失',
   order_mismatch: '章节顺序与模板不一致',
   extra_section: '文档中多出模板未要求的章节',
+}
+
+const METHOD_LABEL: Record<string, string> = {
+  exact: '精确',
+  normalized: '归一化',
+  semantic: '语义',
+  missing: '缺失',
+}
+
+const METHOD_TAG_COLOR: Record<string, string> = {
+  exact: 'green',
+  normalized: 'blue',
+  semantic: 'cyan',
+  missing: 'red',
 }
 
 function templateNodesToTreeData(nodes: TemplateNode[]): DataNode[] {
@@ -219,6 +236,59 @@ export default function StructureReviewDetail({
     </Modal>
   )
 
+  const mappings: StructureMapping[] = Array.isArray(step.mappings) ? step.mappings : []
+
+  const mappingColumns: ColumnsType<StructureMapping> = [
+    {
+      title: '模板章节',
+      dataIndex: 'title_path',
+      render: (_: unknown, r: StructureMapping) =>
+        (r.title_path && r.title_path.length ? r.title_path : [r.template_title]).join(' > '),
+    },
+    {
+      title: '用户文档章节',
+      dataIndex: 'user_title',
+      render: (v: unknown, r: StructureMapping) =>
+        r.match_method === 'missing'
+          ? '—'
+          : `${v ?? ''}${r.heading_para_index != null ? `（hpi=${r.heading_para_index}）` : ''}`,
+    },
+    {
+      title: '匹配方式',
+      dataIndex: 'match_method',
+      width: 130,
+      render: (_: unknown, r: StructureMapping) => (
+        <Space size={4} wrap>
+          <Tag color={METHOD_TAG_COLOR[r.match_method] ?? 'default'}>
+            {METHOD_LABEL[r.match_method] ?? r.match_method}
+          </Tag>
+          {r.low_confidence ? <Tag color="orange">低信心</Tag> : null}
+          {r.confidence != null && r.match_method === 'semantic' ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {r.confidence.toFixed(2)}
+            </Typography.Text>
+          ) : null}
+        </Space>
+      ),
+    },
+  ]
+
+  const mappingTable =
+    mappings.length > 0 ? (
+      <>
+        <Typography.Title level={5} style={{ marginTop: 16 }}>
+          章节映射关系
+        </Typography.Title>
+        <Table<StructureMapping>
+          size="small"
+          rowKey={(r) => r.template_node_id}
+          columns={mappingColumns}
+          dataSource={mappings}
+          pagination={mappings.length > 20 ? { pageSize: 20 } : false}
+        />
+      </>
+    ) : null
+
   if (step.passed || step.issues.length === 0) {
     return (
       <>
@@ -243,6 +313,7 @@ export default function StructureReviewDetail({
             </Button>
           </Space>
         </div>
+        {mappingTable}
         {templateModal}
       </>
     )
@@ -278,6 +349,8 @@ export default function StructureReviewDetail({
           </Button>
         </Space>
       </div>
+
+      {mappingTable}
 
       <Typography.Title level={5} style={{ marginTop: 8 }}>
         问题时间轴

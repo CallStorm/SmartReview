@@ -50,6 +50,7 @@ from app.services.review_settings import (
     get_review_prompt_debug_enabled,
     get_review_timeout_seconds,
 )
+from app.services.structure_llm_matcher import build_llm_matcher
 from app.services.tree_align import align_template_user_trees, title_path_str
 from app.services.word_parser import parse_docx_to_tree
 
@@ -120,9 +121,14 @@ def _append_log(db: Session, task: SchemeReviewTask, level: str, message: str) -
     task.review_log = (task.review_log or "") + f"[{ts}] {level.upper()} {message}\n"
 
 
-def _structure_issues_to_report(structure_raw: list[dict[str, Any]]) -> ReportStep:
+def _structure_issues_to_report(
+    structure_raw: list[dict[str, Any]],
+    *,
+    match_records: list[dict[str, Any]] | None = None,
+    match_mode: str = "exact",
+) -> ReportStep:
     issues: list[ReportIssue] = []
-    by_kind: dict[str, int] = {"missing_section": 0}
+    by_kind: dict[str, int] = {"missing_section": 0, "extra_section": 0}
     for raw in structure_raw:
         kind = str(raw.get("kind") or "")
         if kind in by_kind:
@@ -142,6 +148,8 @@ def _structure_issues_to_report(structure_raw: list[dict[str, Any]]) -> ReportSt
             anchor["heading_para_index"] = hpi
         if kind == "missing_section":
             sev: Literal["error", "warning", "info"] = "error"
+        elif kind == "extra_section":
+            sev = "info"
         elif kind == "order_mismatch":
             sev = "warning"
         else:
@@ -155,19 +163,52 @@ def _structure_issues_to_report(structure_raw: list[dict[str, Any]]) -> ReportSt
                 related={"kind": kind},
             )
         )
-    n_miss = by_kind["missing_section"]
-    if not issues:
+
+    records = match_records or []
+    method_counts: dict[str, int] = {}
+    low_count = 0
+    for r in records:
+        m = str(r.get("match_method") or "")
+        method_counts[m] = method_counts.get(m, 0) + 1
+        if r.get("low_confidence"):
+            low_count += 1
+
+    error_count = by_kind["missing_section"]
+    extra_count = by_kind["extra_section"]
+    passed = error_count == 0
+
+    if not issues and not records:
         summary = "结构审核通过"
-    else:
-        parts = [f"共 {len(issues)} 项结构问题"]
-        if n_miss:
-            parts.append(f"（缺失 {n_miss}）")
+    elif match_mode == "fuzzy":
+        parts = [f"共 {len(records)} 项映射"]
+        seg: list[str] = []
+        for m in ("exact", "normalized", "semantic"):
+            if method_counts.get(m):
+                seg.append(f"{m} {method_counts[m]}")
+        if seg:
+            parts.append("（" + " / ".join(seg) + "）")
+        if low_count:
+            parts.append(f"低信心 {low_count}")
+        if error_count:
+            parts.append(f"缺失 {error_count}")
+        if extra_count:
+            parts.append(f"多余 {extra_count}")
         summary = "".join(parts)
+    else:
+        if not issues:
+            summary = "结构审核通过"
+        else:
+            parts = [f"共 {len(issues)} 项结构问题"]
+            if error_count:
+                parts.append(f"（缺失 {error_count}）")
+            summary = "".join(parts)
+
     return ReportStep(
         step_id="structure",
-        passed=len(issues) == 0,
+        passed=passed,
         summary=summary,
         issues=issues,
+        mappings=records,
     )
 
 
@@ -1083,12 +1124,27 @@ def run_review_pipeline(task_id: int) -> None:
         )
         user_nodes = user_tree.get("nodes") or []
 
-        mapping, struct_raw = align_template_user_trees(template_nodes, user_nodes)
-        structure_step = _structure_issues_to_report(struct_raw)
+        review_timeout_seconds = get_review_timeout_seconds(db)
+        match_mode = tmpl.structure_match_mode or "exact"
+        llm_matcher = None
+        if match_mode == "fuzzy":
+            llm_matcher = build_llm_matcher(
+                db,
+                timeout_seconds=float(max(60.0, review_timeout_seconds)),
+                log_sink=lambda level, msg: _append_log(db, task, level, msg),
+            )
+        mapping, struct_raw, match_records = align_template_user_trees(
+            template_nodes,
+            user_nodes,
+            match_mode=match_mode,
+            llm_matcher=llm_matcher,
+        )
+        structure_step = _structure_issues_to_report(
+            struct_raw, match_records=match_records, match_mode=match_mode
+        )
 
         provider = effective_default_provider(db)
         prompt_debug_enabled = get_review_prompt_debug_enabled(db)
-        review_timeout_seconds = get_review_timeout_seconds(db)
         compilation_basis_concurrency = get_compilation_basis_concurrency(db)
         context_consistency_concurrency = get_context_consistency_concurrency(db)
         content_concurrency = get_content_concurrency(db)

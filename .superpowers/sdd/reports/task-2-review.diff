@@ -1,0 +1,70 @@
+## Commits
+84af28d feat: add structure_match_mode column to templates
+
+## Stat
+ .../versions/022_template_structure_match_mode.py  | 33 ++++++++++++++++++++++
+ backend/app/models/scheme_template.py              |  3 ++
+ 2 files changed, 36 insertions(+)
+
+## Diff
+diff --git a/backend/alembic/versions/022_template_structure_match_mode.py b/backend/alembic/versions/022_template_structure_match_mode.py
+new file mode 100644
+index 0000000..e1291ce
+--- /dev/null
++++ b/backend/alembic/versions/022_template_structure_match_mode.py
+@@ -0,0 +1,33 @@
++# backend/alembic/versions/022_template_structure_match_mode.py
++"""add structure_match_mode to templates
++
++Revision ID: 022
++Revises: 021
++Create Date: 2026-06-23
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++
++revision: str = "022"
++down_revision: Union[str, None] = "021"
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++
++def upgrade() -> None:
++    op.add_column(
++        "templates",
++        sa.Column(
++            "structure_match_mode",
++            sa.String(length=16),
++            nullable=False,
++            server_default="exact",
++        ),
++    )
++
++
++def downgrade() -> None:
++    op.drop_column("templates", "structure_match_mode")
+diff --git a/backend/app/models/scheme_template.py b/backend/app/models/scheme_template.py
+index 0fddbe7..52f1fb5 100644
+--- a/backend/app/models/scheme_template.py
++++ b/backend/app/models/scheme_template.py
+@@ -24,14 +24,17 @@ class SchemeTemplate(Base):
+         index=True,
+     )
+     minio_bucket: Mapped[str] = mapped_column(String(128), nullable=False)
+     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+     original_filename: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+     parsed_structure: Mapped[str | None] = mapped_column(Text, nullable=True)
+     review_workflow: Mapped[str | None] = mapped_column(Text, nullable=True)
+     full_document_review_config: Mapped[str | None] = mapped_column(Text, nullable=True)
++    structure_match_mode: Mapped[str] = mapped_column(
++        String(16), nullable=False, server_default="exact", default="exact"
++    )
+     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+     updated_at: Mapped[datetime] = mapped_column(
+         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+     )
+ 
+     scheme_type: Mapped[SchemeType] = relationship("SchemeType", back_populates="template")

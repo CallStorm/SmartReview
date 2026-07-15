@@ -90,6 +90,19 @@ export interface FullDocumentReviewConfig {
   knowledge_keywords?: string[]
 }
 
+export type StructureMatchMode = 'exact' | 'fuzzy'
+
+export interface StructureMapping {
+  template_node_id: string
+  template_title: string
+  title_path: string[]
+  user_title?: string | null
+  heading_para_index?: number | null
+  match_method: 'exact' | 'normalized' | 'semantic' | 'missing'
+  confidence?: number | null
+  low_confidence?: boolean
+}
+
 export interface ReviewWorkflowData {
   steps: WorkflowStepId[]
 }
@@ -151,6 +164,7 @@ export interface TemplatePublic {
   parsed_structure: { nodes: TemplateNode[] } | null
   review_workflow: ReviewWorkflowData | null
   full_document_review_config?: FullDocumentReviewConfig | null
+  structure_match_mode: StructureMatchMode
   parsed_at: string | null
   updated_at: string | null
 }
@@ -171,6 +185,7 @@ export interface ReportStep {
   passed: boolean
   summary: string
   issues: ReportIssue[]
+  mappings?: StructureMapping[]
 }
 
 export interface ReviewReportV1 {

@@ -17,6 +17,7 @@ from app.schemas.template import (
     DownloadUrlResponse,
     FullDocumentReviewConfigUpdate,
     ReviewWorkflowUpdate,
+    StructureMatchModeUpdate,
     TemplatePublic,
     TemplateStructureUpdate,
     TemplateUploadResponse,
@@ -82,6 +83,7 @@ def _template_public(t: SchemeTemplate) -> TemplatePublic:
         parsed_structure=structure,
         review_workflow=workflow,
         full_document_review_config=full_doc,
+        structure_match_mode=t.structure_match_mode or "exact",
         parsed_at=t.parsed_at,
         updated_at=t.updated_at,
     )
@@ -234,6 +236,28 @@ def update_template_full_document_review(
         )
     except (TypeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"无法序列化配置: {e!s}") from e
+    db.commit()
+    db.refresh(t)
+    return _template_public(t)
+
+
+@router.patch(
+    "/scheme-types/{scheme_id}/template/structure-match-mode",
+    response_model=TemplatePublic,
+)
+def update_template_structure_match_mode(
+    scheme_id: int,
+    body: StructureMatchModeUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> TemplatePublic:
+    scheme = db.get(SchemeType, scheme_id)
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="方案类型不存在")
+    t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
+    if t is None:
+        raise HTTPException(status_code=404, detail="尚未上传模版")
+    t.structure_match_mode = body.mode
     db.commit()
     db.refresh(t)
     return _template_public(t)
