@@ -27,7 +27,7 @@ from app.services.onlyoffice import (
     make_file_access_token,
     verify_file_access_token,
 )
-from app.services.review_report_docx import build_audit_report_docx
+from app.services.review_report_pdf import build_audit_report_pdf
 from app.services.review_settings import DEFAULT_SYSTEM_NAME, get_or_create_review_settings
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
@@ -39,7 +39,7 @@ def _audit_report_filename(original_filename: str) -> str:
     raw = (original_filename or "").strip() or "document"
     base = re.sub(r"\.docx$", "", raw, flags=re.IGNORECASE).strip() or "document"
     safe = re.sub(r'[\\/:*?"<>|]', "_", base).strip() or "document"
-    return f"{safe}_审核报告.docx"
+    return f"{safe}_审核报告.pdf"
 
 
 def _parse_review_report_json(raw: str | None) -> ReviewReportV1 | None:
@@ -204,13 +204,13 @@ def download_audit_report(
         raise HTTPException(status_code=404, detail="暂无审核报告数据")
     settings = get_or_create_review_settings(db)
     system_name = (settings.system_name or "").strip() or DEFAULT_SYSTEM_NAME
-    content = build_audit_report_docx(t, report, system_name=system_name)
+    content = build_audit_report_pdf(t, report, system_name=system_name)
     filename = _audit_report_filename(t.original_filename)
-    ascii_fallback = "audit-report.docx"
+    ascii_fallback = "audit-report.pdf"
     encoded_name = quote(filename, safe="")
     return StreamingResponse(
         iter([content]),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type="application/pdf",
         headers={
             "Content-Disposition": (
                 f'attachment; filename="{ascii_fallback}"; '

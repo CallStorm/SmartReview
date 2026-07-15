@@ -1,4 +1,4 @@
-"""Tests for audit report Word generation."""
+"""Tests for audit report PDF generation."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ import io
 import json
 from datetime import UTC, datetime
 
-from docx import Document
+from pypdf import PdfReader
 
 from app.schemas.review_report import ReportIssue, ReportStep, ReviewReportV1
-from app.services.review_report_docx import build_audit_report_docx
+from app.services.review_report_pdf import build_audit_report_pdf
 
 
 class _FakeScheme:
@@ -28,7 +28,14 @@ class _FakeTask:
 _CHAPTER = "一、工程概况 > 1.模板支撑体系工程概况和特点"
 
 
-def test_build_audit_report_docx_contains_sections_and_tables() -> None:
+def _pdf_text(data: bytes) -> str:
+    reader = PdfReader(io.BytesIO(data))
+    raw = "\n".join((page.extract_text() or "") for page in reader.pages)
+    # PDF text extractors often insert hard breaks mid-phrase; normalize for asserts.
+    return "".join(raw.split())
+
+
+def test_build_audit_report_pdf_contains_sections_and_tables() -> None:
     report = ReviewReportV1(
         steps=[
             ReportStep(
@@ -91,51 +98,42 @@ def test_build_audit_report_docx_contains_sections_and_tables() -> None:
                     ),
                 ],
             ),
+            ReportStep(
+                step_id="context_consistency",
+                passed=True,
+                summary="无问题",
+                issues=[],
+            ),
         ]
     )
-    data = build_audit_report_docx(_FakeTask(), report, system_name="智能方案审核")
+    data = build_audit_report_pdf(_FakeTask(), report, system_name="智能方案审核")
+    assert data.startswith(b"%PDF")
     assert len(data) > 1000
 
-    doc = Document(io.BytesIO(data))
-    texts = "\n".join(p.text for p in doc.paragraphs)
+    texts = _pdf_text(data)
     assert "审核报告" in texts
     assert "结构审核" in texts
     assert "编制依据审核" in texts
     assert "内容审核" in texts
-    assert "AI 自动审核" in texts
+    assert "AI自动审核" in texts
     assert "严重程度" not in texts
-
-    heading3_styles = [
-        p.text for p in doc.paragraphs if p.style and p.style.name == "Heading 3"
-    ]
-    assert _CHAPTER in heading3_styles
-
-    assert len(doc.tables) >= 4
-
-    meta_table = doc.tables[0]
-    assert meta_table.rows[0].cells[0].text == "项目"
-    assert meta_table.rows[0].cells[1].text == "内容"
-    meta_labels = [row.cells[0].text for row in meta_table.rows[1:]]
-    assert "方案类型" in meta_labels
-    assert "摘要" in meta_labels
-    summary_row = next(row for row in meta_table.rows[1:] if row.cells[0].text == "摘要")
-    assert "本次审核任务状态为" in summary_row.cells[1].text
-    assert "摘要：" not in summary_row.cells[1].text
-
-    content_table = next(
-        t for t in doc.tables if t.rows[0].cells[0].text == "序号"
-    )
-    assert content_table.rows[0].cells[1].text == "问题"
-    assert content_table.rows[0].cells[2].text == "原文内容"
-    assert content_table.rows[0].cells[3].text == "修改建议"
-    assert len(content_table.rows) == 3
+    assert "缺少应急预案章节" in texts
+    assert "未引用现行规范" in texts
+    assert "未明确高大支模范围内梁的跨度" in texts
+    assert "本步骤无问题项" in texts
+    assert "方案类型" in texts
+    assert "摘要" in texts
+    assert "本次审核任务状态为" in texts
+    assert "模板支撑体系工程概况和特点" in texts
 
 
-def test_parse_review_report_json_roundtrip() -> None:
+def test_parse_review_report_json_and_filename() -> None:
     from app.api.review_tasks import _audit_report_filename, _parse_review_report_json
 
-    assert _audit_report_filename("test方案.docx") == "test方案_审核报告.docx"
-    raw = json.dumps({"version": 1, "steps": [{"step_id": "structure", "passed": True, "issues": []}]})
+    assert _audit_report_filename("test方案.docx") == "test方案_审核报告.pdf"
+    raw = json.dumps(
+        {"version": 1, "steps": [{"step_id": "structure", "passed": True, "issues": []}]}
+    )
     parsed = _parse_review_report_json(raw)
     assert parsed is not None
     assert parsed.steps[0].step_id == "structure"

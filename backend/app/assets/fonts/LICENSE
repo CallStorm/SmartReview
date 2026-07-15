@@ -1,0 +1,10 @@
+Noto Sans SC (Simplified Chinese)
+
+This directory contains NotoSansSC-Regular.ttf (Chinese-simplified weight 400)
+from the Fontsource packaging of Google Noto Sans SC.
+
+License: SIL Open Font License 1.1
+https://scripts.sil.org/OFL
+
+Upstream: https://github.com/google/fonts (ofl/notosanssc)
+Fontsource: https://fontsource.org/fonts/noto-sans-sc

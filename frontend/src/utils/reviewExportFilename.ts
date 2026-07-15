@@ -9,7 +9,7 @@ export function buildReviewExportFilename(originalFilename: string): string {
   return `${sanitizeExportBasename(originalFilename)}_审核.docx`
 }
 
-/** 导出审核报告：上传文件名去扩展名 + `_审核报告.docx` */
+/** 导出审核报告：上传文件名去扩展名 + `_审核报告.pdf` */
 export function buildAuditReportFilename(originalFilename: string): string {
-  return `${sanitizeExportBasename(originalFilename)}_审核报告.docx`
+  return `${sanitizeExportBasename(originalFilename)}_审核报告.pdf`
 }
