@@ -15,6 +15,7 @@ import SettingsPage from './pages/SettingsPage'
 import TemplatesPage from './pages/TemplatesPage'
 import DashboardPage from './pages/DashboardPage'
 import HelpPage from './pages/HelpPage'
+import AdminManualPage from './pages/AdminManualPage'
 import UsersPage from './pages/UsersPage'
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -117,6 +118,14 @@ function AppRoutes() {
         />
         <Route path="review" element={<ReviewPage />} />
         <Route path="help" element={<HelpPage />} />
+        <Route
+          path="admin-manual"
+          element={
+            <RequireAdmin>
+              <AdminManualPage />
+            </RequireAdmin>
+          }
+        />
         <Route path="review/:taskId/manual" element={<ManualReviewPage />} />
         <Route path="review/:taskId/edit" element={<ReviewEditPlaceholderPage />} />
         <Route path="review/:taskId/preview" element={<ReviewEditPlaceholderPage />} />

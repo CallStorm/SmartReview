@@ -10,6 +10,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  ReadOutlined,
   SettingOutlined,
   TeamOutlined,
   UserOutlined,
@@ -33,6 +34,7 @@ function resolveMenuSelectedKey(pathname: string): string {
   if (pathname.startsWith('/users')) return '/users'
   if (pathname.startsWith('/settings')) return '/settings'
   if (pathname.startsWith('/help')) return '/help'
+  if (pathname.startsWith('/admin-manual')) return '/admin-manual'
   return pathname
 }
 
@@ -88,6 +90,7 @@ export default function AppLayout() {
         label: '支持',
         children: [
           { key: '/help', icon: <BookOutlined />, label: '使用帮助' },
+          { key: '/admin-manual', icon: <ReadOutlined />, label: '管理员使用手册' },
         ],
       },
     ]

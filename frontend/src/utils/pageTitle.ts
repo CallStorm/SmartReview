@@ -11,5 +11,6 @@ export function resolvePageTitle(pathname: string): string {
   if (pathname === '/settings') return '设置'
   if (pathname === '/users') return '用户管理'
   if (pathname === '/help') return '使用帮助'
+  if (pathname === '/admin-manual') return '管理员使用手册'
   return '施工方案审核系统'
 }

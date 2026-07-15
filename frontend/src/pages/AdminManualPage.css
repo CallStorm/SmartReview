@@ -1,0 +1,102 @@
+.admin-manual {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.admin-manual__nav {
+  flex: 0 0 220px;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  padding: 12px 0;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+.admin-manual__nav .ant-anchor {
+  padding-inline: 16px 12px;
+}
+
+.admin-manual__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-manual__section-wrap {
+  scroll-margin-top: 24px;
+}
+
+.admin-manual__section-wrap--nested {
+  scroll-margin-top: 16px;
+}
+
+.admin-manual__section .ant-card-head-title {
+  font-weight: 600;
+}
+
+.admin-manual__intro {
+  margin-bottom: 12px !important;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.admin-manual__steps {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.admin-manual__steps > li + li {
+  margin-top: 10px;
+}
+
+.admin-manual__step-text {
+  margin: 4px 0 0 !important;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.admin-manual__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-manual__figure {
+  margin: 16px 0 0;
+}
+
+.admin-manual__figure img {
+  display: block;
+  max-width: 100%;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.admin-manual__figure figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.admin-manual__table-block + .admin-manual__table-block {
+  margin-top: 16px;
+}
+
+@media (max-width: 960px) {
+  .admin-manual {
+    flex-direction: column;
+  }
+
+  .admin-manual__nav {
+    position: static;
+    width: 100%;
+    max-height: none;
+  }
+}
