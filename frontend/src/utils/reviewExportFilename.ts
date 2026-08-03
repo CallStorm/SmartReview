@@ -13,3 +13,8 @@ export function buildReviewExportFilename(originalFilename: string): string {
 export function buildAuditReportFilename(originalFilename: string): string {
   return `${sanitizeExportBasename(originalFilename)}_审核报告.pdf`
 }
+
+/** 导出 Word 版审核报告（管理员可见）：上传文件名去扩展名 + `_审核报告.docx` */
+export function buildAuditReportDocxFilename(originalFilename: string): string {
+  return `${sanitizeExportBasename(originalFilename)}_审核报告.docx`
+}

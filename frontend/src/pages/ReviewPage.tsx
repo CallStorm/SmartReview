@@ -7,6 +7,7 @@ import {
   ExportOutlined,
   FileSearchOutlined,
   FileTextOutlined,
+  FileWordOutlined,
   ProfileOutlined,
   UploadOutlined,
   WarningOutlined,
@@ -35,6 +36,7 @@ import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 import {
+  buildAuditReportDocxFilename,
   buildAuditReportFilename,
   buildReviewExportFilename,
 } from '../utils/reviewExportFilename'
@@ -134,6 +136,23 @@ async function downloadAuditReport(taskId: number, downloadName: string): Promis
   const { data } = await api.get<Blob>(`/review-tasks/${taskId}/audit-report`, {
     responseType: 'blob',
   })
+  const blob = data instanceof Blob ? data : new Blob([data])
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = downloadName
+  a.rel = 'noopener'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+async function downloadAuditReportDocx(
+  taskId: number,
+  downloadName: string,
+): Promise<void> {
+  const { data } = await api.get<Blob>(
+    `/review-tasks/${taskId}/audit-report.docx`,
+    { responseType: 'blob' },
+  )
   const blob = data instanceof Blob ? data : new Blob([data])
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -329,6 +348,20 @@ export default function ReviewPage() {
     }
   }
 
+  const handleAuditReportDocxExport = async (row: ReviewTask) => {
+    if (row.status !== 'succeeded' && row.status !== 'failed') {
+      message.warning('任务尚未完成，暂无法导出 Word 报告')
+      return
+    }
+    try {
+      const name = buildAuditReportDocxFilename(row.original_filename)
+      await downloadAuditReportDocx(row.id, name)
+      message.success(`已开始下载 ${name}`)
+    } catch {
+      message.error('导出 Word 报告失败')
+    }
+  }
+
   return (
     <div className="review-page">
       <PageShell
@@ -501,6 +534,25 @@ export default function ReviewPage() {
                         审核报告
                       </Button>
                     </Tooltip>
+                    {isAdmin ? (
+                      <Tooltip
+                        title={
+                          taskEnded
+                            ? undefined
+                            : '任务处理结束后（已完成或失败）可导出 Word 版审核报告'
+                        }
+                      >
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<FileWordOutlined />}
+                          disabled={!taskEnded}
+                          onClick={() => void handleAuditReportDocxExport(row)}
+                        >
+                          Word 报告
+                        </Button>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip
                       title={
                         taskEnded
