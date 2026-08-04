@@ -62,7 +62,7 @@ export default function BasisPage() {
     },
   })
 
-  const { data: schemes = [] } = useQuery({
+  const { data: schemes = [], isLoading: schemesLoading } = useQuery({
     queryKey: ['schemes'],
     queryFn: async () => {
       const { data: rows } = await api.get<SchemeType[]>('/scheme-types')
@@ -82,17 +82,30 @@ export default function BasisPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<BasisItem | null>(null)
   const [keyword, setKeyword] = useState('')
+  const [filterSchemeId, setFilterSchemeId] = useState<number | null>(null)
   const [form] = Form.useForm()
 
   const filteredData = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase()
-    if (!normalizedKeyword) return data
+    const selectedScheme =
+      filterSchemeId != null ? schemes.find((s) => s.id === filterSchemeId) : undefined
+    if (!normalizedKeyword && !selectedScheme) return data
     return data.filter((item) => {
+      if (
+        selectedScheme &&
+        !(
+          item.scheme_category === selectedScheme.category &&
+          item.scheme_name === selectedScheme.name
+        )
+      ) {
+        return false
+      }
+      if (!normalizedKeyword) return true
       const standardNo = item.standard_no?.toLowerCase() ?? ''
       const docName = item.doc_name?.toLowerCase() ?? ''
       return standardNo.includes(normalizedKeyword) || docName.includes(normalizedKeyword)
     })
-  }, [data, keyword])
+  }, [data, keyword, filterSchemeId, schemes])
 
   const saveMutation = useMutation({
     mutationFn: async (values: Record<string, unknown>) => {
@@ -134,7 +147,20 @@ export default function BasisPage() {
       icon={<FileTextOutlined />}
       description=""
       extra={
-        <Space>
+        <Space wrap>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="按方案类型过滤"
+            loading={schemesLoading}
+            style={{ minWidth: 260 }}
+            popupMatchSelectWidth={false}
+            value={filterSchemeId ?? undefined}
+            onChange={(v) => setFilterSchemeId(typeof v === 'number' ? v : null)}
+            options={schemeSelectOptions}
+            notFoundContent={schemes.length === 0 ? '暂无方案类型' : undefined}
+          />
           <Input
             allowClear
             placeholder="按标准号或文献名称过滤"

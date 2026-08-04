@@ -403,13 +403,18 @@ export default function ReviewPage() {
             <Select
               placeholder="选择方案类型"
               loading={schemesLoading}
-              style={{ minWidth: 260 }}
+              className="review-page__scheme-select"
+              popupMatchSelectWidth={false}
+              classNames={{ popup: { root: 'review-page__scheme-dropdown' } }}
               allowClear
+              showSearch
+              optionFilterProp="label"
               value={schemeId ?? undefined}
               onChange={(v) => setSchemeId(typeof v === 'number' ? v : null)}
               options={withTemplate.map((s) => ({
                 value: s.id,
                 label: `${s.category} / ${s.name}`,
+                title: `${s.category} / ${s.name}`,
               }))}
             />
             <Button icon={<CloudDownloadOutlined />} onClick={handleDownloadTemplate}>

@@ -66,6 +66,23 @@
   flex-wrap: wrap;
 }
 
+/* 方案类型选择框：加宽以完整显示较长的「分类 / 名称」文案 */
+.review-page__scheme-select {
+  min-width: 420px;
+  max-width: 100%;
+}
+
+/* 下拉面板宽度跟随内容（popupMatchSelectWidth={false}），此处仅兜底不超出视口 */
+.review-page__scheme-dropdown {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+@media (max-width: 768px) {
+  .review-page__scheme-select {
+    min-width: 100%;
+  }
+}
+
 .review-page__table-wrap .ant-table-tbody > tr.ant-table-row > td {
   transition: background-color 0.15s ease;
 }
