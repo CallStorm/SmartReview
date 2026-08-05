@@ -2,6 +2,7 @@ import { FormOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
+  Card,
   Divider,
   Input,
   Modal,
@@ -89,6 +90,7 @@ export default function TemplatesPage() {
   const [preview, setPreview] = useState<TemplatePublic | null>(null)
   const [structureDraft, setStructureDraft] = useState<{ nodes: TemplateNode[] } | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [globalRulesDraft, setGlobalRulesDraft] = useState<string>('')
 
   const { data: difyDatasets = [], isLoading: datasetsLoading } = useQuery({
     queryKey: ['dify-datasets'],
@@ -172,6 +174,32 @@ export default function TemplatesPage() {
         text = parts.join('；')
       }
       message.error(text)
+    },
+  })
+
+  const saveGlobalRulesMut = useMutation({
+    mutationFn: async (rules: string) => {
+      if (!preview?.scheme_type_id) {
+        throw new Error('缺少方案 id')
+      }
+      const { data } = await api.put<TemplatePublic>(
+        `/scheme-types/${preview.scheme_type_id}/template/content-review-rules`,
+        { content_review_rules: rules },
+      )
+      return data
+    },
+    onSuccess: (updated) => {
+      message.success('已保存内容审核全局规则')
+      setPreview(updated)
+      setGlobalRulesDraft(updated.content_review_rules ?? '')
+      void qc.invalidateQueries({ queryKey: ['schemes'] })
+    },
+    onError: (err: unknown) => {
+      const raw =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+          : undefined
+      message.error(typeof raw === 'string' ? raw : '保存失败')
     },
   })
 
@@ -264,6 +292,7 @@ export default function TemplatesPage() {
                         `/scheme-types/${row.id}/template`,
                       )
                       setPreview(data)
+                      setGlobalRulesDraft(data.content_review_rules ?? '')
                     } catch {
                       message.warning('该方案尚未上传模版')
                     }
@@ -362,6 +391,34 @@ export default function TemplatesPage() {
         }
         styles={{ body: { paddingTop: 12 } }}
       >
+        <Card
+          size="small"
+          type="inner"
+          title="内容审核全局规则"
+          styles={{ body: { paddingBottom: 8 } }}
+          style={{ marginBottom: 12 }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
+            模板级规则。保存后会作为每个节点「审核提示词」的补充追加到内容审核（per-node）LLM 的 prompt 里；
+            不影响通篇审核、上下文一致性、编制依据三步。
+          </Typography.Paragraph>
+          <Input.TextArea
+            rows={4}
+            value={globalRulesDraft}
+            onChange={(e) => setGlobalRulesDraft(e.target.value)}
+            placeholder="例如：必须检查每页是否有页码；引用的法规必须在知识库检索片段中能找到…"
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button
+              type="primary"
+              loading={saveGlobalRulesMut.isPending}
+              onClick={() => saveGlobalRulesMut.mutate(globalRulesDraft)}
+            >
+              保存全局规则
+            </Button>
+          </Space>
+        </Card>
+        <Divider style={{ margin: '0 0 12px' }} />
         {structureDraft?.nodes?.length ? (
           <div style={{ display: 'flex', gap: 16, minHeight: 520 }}>
             <div

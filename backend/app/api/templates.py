@@ -14,6 +14,7 @@ from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
 from app.models.user import User
 from app.schemas.template import (
+    ContentReviewRulesUpdate,
     DownloadUrlResponse,
     FullDocumentReviewConfigUpdate,
     ReviewWorkflowUpdate,
@@ -82,6 +83,7 @@ def _template_public(t: SchemeTemplate) -> TemplatePublic:
         parsed_structure=structure,
         review_workflow=workflow,
         full_document_review_config=full_doc,
+        content_review_rules=t.content_review_rules,
         structure_match_mode=t.structure_match_mode or "exact",
         parsed_at=t.parsed_at,
         updated_at=t.updated_at,
@@ -258,6 +260,29 @@ def update_template_structure_match_mode(
     if t is None:
         raise HTTPException(status_code=404, detail="尚未上传模版")
     t.structure_match_mode = body.mode
+    db.commit()
+    db.refresh(t)
+    return _template_public(t)
+
+
+@router.put(
+    "/scheme-types/{scheme_id}/template/content-review-rules",
+    response_model=TemplatePublic,
+)
+def update_template_content_review_rules(
+    scheme_id: int,
+    body: ContentReviewRulesUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> TemplatePublic:
+    scheme = db.get(SchemeType, scheme_id)
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="方案类型不存在")
+    t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
+    if t is None:
+        raise HTTPException(status_code=404, detail="尚未上传模版")
+    value = (body.content_review_rules or "").strip()
+    t.content_review_rules = value or None
     db.commit()
     db.refresh(t)
     return _template_public(t)

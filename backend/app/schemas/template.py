@@ -74,6 +74,14 @@ class StructureMatchModeUpdate(BaseModel):
     mode: Literal["exact", "fuzzy"]
 
 
+class ContentReviewRulesUpdate(BaseModel):
+    """模板级「内容审核全局规则」。保存后会作为每个节点「审核提示词」的补充
+    追加到内容审核（per-node）LLM 的 prompt 里；不影响通篇审核、上下文一致性、
+    编制依据三步。空字符串表示未设置。"""
+
+    content_review_rules: str = ""
+
+
 class TemplateStructureUpdate(BaseModel):
     """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/编制依据开关/上下文一致性比对与一致性提示词等配置）。"""
 
@@ -89,6 +97,7 @@ class TemplatePublic(BaseModel):
     parsed_structure: Any | None = None
     review_workflow: dict[str, Any] | None = None
     full_document_review_config: dict[str, Any] | None = None
+    content_review_rules: str | None = None
     structure_match_mode: str = "exact"
     parsed_at: datetime | None
     updated_at: datetime | None

@@ -164,6 +164,7 @@ export interface TemplatePublic {
   parsed_structure: { nodes: TemplateNode[] } | null
   review_workflow: ReviewWorkflowData | null
   full_document_review_config?: FullDocumentReviewConfig | null
+  content_review_rules?: string | null
   structure_match_mode: StructureMatchMode
   parsed_at: string | null
   updated_at: string | null

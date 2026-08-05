@@ -470,6 +470,7 @@ def _content_node_worker(
         bool,
         str,
         int,
+        str,
     ],
 ) -> tuple[int, ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
     """单节点：知识库检索 + LLM；不写入主库，日志行返回给主线程按序写入。"""
@@ -484,6 +485,7 @@ def _content_node_worker(
         prompt_debug_enabled,
         step_id,
         len_content_nodes,
+        global_rules,
     ) = payload
     logs: list[LogLine] = []
     node_t0 = perf_counter()
@@ -558,7 +560,7 @@ def _content_node_worker(
             "title_path": tp,
             "heading_para_index": hpi,
         }
-        prompt = _content_prompt(current_text, ref_text, kb_text, rp)
+        prompt = _content_prompt(current_text, ref_text, kb_text, rp, global_rules)
         llm_t0 = perf_counter()
         try:
             sub, usage, ll_logs, dbg = _llm_review_execute(
@@ -880,7 +882,17 @@ def _content_prompt(
     ref_text: str,
     kb_text: str,
     review_prompt: str,
+    global_rules: str = "",
 ) -> str:
+    """构造 per-node 内容审核 LLM prompt。
+
+    `global_rules`（模板级「内容审核全局规则」）会作为 per-node 审核提示词的
+    补充追加在【审核提示词】块内、per-node prompt 之后。空字符串时不输出该段。
+    """
+    prompt_block = review_prompt
+    if global_rules and global_rules.strip():
+        # 直接拼到 per-node 审核提示词后面，不加额外区块标题
+        prompt_block = f"{review_prompt}\n\n{global_rules.strip()}"
     return (
         "【当前章节及子节正文】\n"
         f"{current_text[:16000]}\n\n"
@@ -889,7 +901,7 @@ def _content_prompt(
         "【知识库检索片段】\n"
         f"{kb_text[:12000] or '(无)'}\n\n"
         "【审核提示词】\n"
-        f"{review_prompt}\n\n"
+        f"{prompt_block}\n\n"
         "【审核逻辑】\n"
         "1. 严格依据【审核提示词】提取核查项，不得自行新增无关检查项。\n"
         "2. 逐项核查【当前章节及子节正文】；若缺失关键信息，明确指出缺失项。\n"
@@ -1363,6 +1375,8 @@ def run_review_pipeline(task_id: int) -> None:
 
             elif step_id == "content":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
+                # 模板级「内容审核全局规则」：作为 per-node 提示词的补充注入到 LLM prompt
+                content_global_rules = (tmpl.content_review_rules or "").strip()
                 content_nodes: list[dict[str, Any]] = []
                 for tn in iter_nodes(template_nodes):
                     rp = (tn.get("review_prompt") or "").strip() if isinstance(tn.get("review_prompt"), str) else ""
@@ -1396,6 +1410,7 @@ def run_review_pipeline(task_id: int) -> None:
                             prompt_debug_enabled,
                             step_id,
                             len(content_nodes),
+                            content_global_rules,
                         ),
                     )
                     for i, tn in enumerate(content_nodes)
