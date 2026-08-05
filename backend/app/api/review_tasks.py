@@ -121,8 +121,13 @@ def _task_public(
 def list_my_tasks(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    limit: int = 100,
 ) -> list[ReviewTaskPublic]:
+    """列出当前用户可见的全部审核任务：管理员看所有用户的任务，普通用户仅看自己的。
+
+    注意：返回全量（无分页/无 limit）。前端 ReviewPage 的统计卡依赖 tasks.length 与
+    数据看板的「审核任务总数」对齐。如果未来数据量过大（万级以上），应改为分页接口
+    `{items, total}`，统计卡读 total 即可。
+    """
     opts = [
         joinedload(SchemeReviewTask.scheme_type),
         defer(SchemeReviewTask.review_log),
@@ -134,7 +139,7 @@ def list_my_tasks(
     if user.role != UserRole.admin:
         q = q.filter(SchemeReviewTask.user_id == user.id)
     q = q.order_by(SchemeReviewTask.id.desc())
-    rows = q.limit(min(limit, 200)).all()
+    rows = q.all()
     return [
         _task_public(
             r,
