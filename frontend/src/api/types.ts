@@ -305,6 +305,10 @@ export interface DashboardSettings {
   refresh_interval_minutes: number
 }
 
+export interface UploadSettings {
+  max_upload_mb: number
+}
+
 export interface ReviewSettings {
   review_timeout_seconds: number
   prompt_debug_enabled: boolean

@@ -23,11 +23,10 @@ from app.schemas.template import (
     TemplateUploadResponse,
 )
 from app.services import minio_storage
+from app.services.upload_settings import get_max_upload_mb
 from app.services.word_parser import parse_docx_to_tree, tree_to_json_str
 
 router = APIRouter(tags=["templates"])
-
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 
 def _download_filename_for_scheme_template(scheme: SchemeType) -> str:
@@ -106,8 +105,9 @@ async def upload_template(
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="请上传 .docx 文件")
     data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="文件过大")
+    max_mb = get_max_upload_mb(db)
+    if len(data) > max_mb * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"文件超过 {max_mb} MB 限制")
     try:
         tree = parse_docx_to_tree(BytesIO(data))
         parsed_json = tree_to_json_str(tree)

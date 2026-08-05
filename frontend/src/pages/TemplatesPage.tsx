@@ -18,7 +18,7 @@ import type { DataNode } from 'antd/es/tree'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
-import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic } from '../api/types'
+import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic, UploadSettings } from '../api/types'
 import PageShell from '../components/PageShell'
 import FullDocumentReviewModal from '../components/FullDocumentReviewModal'
 import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
@@ -64,6 +64,20 @@ export default function TemplatesPage() {
       return rows
     },
   })
+
+  const { data: uploadSettings } = useQuery({
+    queryKey: ['settings', 'upload'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get<UploadSettings>('/settings/upload')
+        return data
+      } catch {
+        // 静默：按默认 100MB 兜底
+        return null
+      }
+    },
+  })
+  const maxUploadMb = uploadSettings?.max_upload_mb ?? 100
 
   const [uploadScheme, setUploadScheme] = useState<SchemeType | null>(null)
   const [workflowScheme, setWorkflowScheme] = useState<SchemeType | null>(null)
@@ -111,7 +125,21 @@ export default function TemplatesPage() {
       void qc.invalidateQueries({ queryKey: ['template', res.template.scheme_type_id] })
       void qc.invalidateQueries({ queryKey: ['schemes'] })
     },
-    onError: () => message.error('上传失败'),
+    onError: (err: unknown) => {
+      const detailMsg =
+        err &&
+        typeof err === 'object' &&
+        'response' in err &&
+        err.response &&
+        typeof err.response === 'object' &&
+        'data' in err.response &&
+        err.response.data &&
+        typeof err.response.data === 'object' &&
+        'detail' in err.response.data
+          ? String((err.response.data as { detail?: unknown }).detail)
+          : ''
+      message.error(detailMsg || '上传失败')
+    },
   })
 
   const saveStructureMut = useMutation({
@@ -519,6 +547,11 @@ export default function TemplatesPage() {
           accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           maxCount={1}
           beforeUpload={(file) => {
+            const maxBytes = maxUploadMb * 1024 * 1024
+            if (file.size > maxBytes) {
+              message.warning(`文件超过 ${maxUploadMb} MB 限制`)
+              return Upload.LIST_IGNORE
+            }
             if (!uploadScheme) return false
             uploadMut.mutate({ schemeId: uploadScheme.id, file })
             return false

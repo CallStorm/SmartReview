@@ -31,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ReviewTask, SchemeType } from '../api/types'
+import type { ReviewTask, SchemeType, UploadSettings } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
@@ -182,6 +182,20 @@ export default function ReviewPage() {
       return rows
     },
   })
+
+  const { data: uploadSettings } = useQuery({
+    queryKey: ['settings', 'upload'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get<UploadSettings>('/settings/upload')
+        return data
+      } catch {
+        // 静默：未登录或非管理员时按默认 100MB 兜底
+        return null
+      }
+    },
+  })
+  const maxUploadMb = uploadSettings?.max_upload_mb ?? 100
 
   const withTemplate = useMemo(
     () => schemes.filter((s) => s.template_configured),
@@ -638,6 +652,11 @@ export default function ReviewPage() {
               accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               fileList={fileList}
               beforeUpload={(file) => {
+                const maxBytes = maxUploadMb * 1024 * 1024
+                if (file.size > maxBytes) {
+                  message.warning(`文件超过 ${maxUploadMb} MB 限制`)
+                  return Upload.LIST_IGNORE
+                }
                 setFileList([
                   {
                     uid: file.uid,

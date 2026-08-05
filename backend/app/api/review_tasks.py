@@ -30,10 +30,9 @@ from app.services.onlyoffice import (
 from app.services.review_report_docx import build_audit_report_docx
 from app.services.review_report_pdf import build_audit_report_pdf
 from app.services.review_settings import DEFAULT_SYSTEM_NAME, get_or_create_review_settings
+from app.services.upload_settings import get_max_upload_mb
 
 router = APIRouter(prefix="/review-tasks", tags=["review-tasks"])
-
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 
 def _audit_report_filename(original_filename: str) -> str:
@@ -373,8 +372,9 @@ async def create_task(
     if not file.filename or not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="请上传 .docx 文件")
     data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="文件过大")
+    max_mb = get_max_upload_mb(db)
+    if len(data) > max_mb * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"文件超过 {max_mb} MB 限制")
 
     s = get_settings()
     object_key = f"reviews/{scheme_type_id}/{uuid.uuid4().hex}.docx"

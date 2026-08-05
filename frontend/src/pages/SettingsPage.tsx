@@ -31,6 +31,7 @@ import type {
   OnlyofficeSettings,
   ProviderId,
   ReviewSettings,
+  UploadSettings,
 } from '../api/types'
 
 type KbForm = { dify_base_url: string; dify_dataset_name_prefix: string; dify_api_key?: string }
@@ -56,6 +57,10 @@ type OnlyofficeForm = {
 
 type DashboardForm = {
   refresh_interval_minutes: number
+}
+
+type UploadForm = {
+  max_upload_mb: number
 }
 
 type ReviewForm = {
@@ -101,6 +106,7 @@ export default function SettingsPage() {
   const [ooForm] = Form.useForm<OnlyofficeForm>()
   const [dashboardForm] = Form.useForm<DashboardForm>()
   const [reviewForm] = Form.useForm<ReviewForm>()
+  const [uploadForm] = Form.useForm<UploadForm>()
 
   const { data: kbData, isLoading: kbLoading } = useQuery({
     queryKey: ['settings', 'knowledge-base'],
@@ -138,6 +144,14 @@ export default function SettingsPage() {
     queryKey: ['settings', 'review'],
     queryFn: async () => {
       const { data: row } = await api.get<ReviewSettings>('/settings/review')
+      return row
+    },
+  })
+
+  const { data: uploadData, isLoading: uploadLoading } = useQuery({
+    queryKey: ['settings', 'upload'],
+    queryFn: async () => {
+      const { data: row } = await api.get<UploadSettings>('/settings/upload')
       return row
     },
   })
@@ -202,6 +216,28 @@ export default function SettingsPage() {
       })
     }
   }, [reviewData, reviewForm])
+
+  useEffect(() => {
+    if (uploadData) {
+      uploadForm.setFieldsValue({
+        max_upload_mb: uploadData.max_upload_mb,
+      })
+    }
+  }, [uploadData, uploadForm])
+
+  const saveUploadMut = useMutation({
+    mutationFn: async (values: UploadForm) => {
+      const { data } = await api.put<UploadSettings>('/settings/upload', {
+        max_upload_mb: values.max_upload_mb,
+      })
+      return data
+    },
+    onSuccess: async () => {
+      message.success('已保存上传大小限制')
+      await qc.invalidateQueries({ queryKey: ['settings', 'upload'] })
+    },
+    onError: () => message.error('保存失败'),
+  })
 
   const saveKbMut = useMutation({
     mutationFn: async (values: KbForm) => {
@@ -698,6 +734,37 @@ export default function SettingsPage() {
           </Button>
         </Form.Item>
       </Form>
+
+      <Divider style={{ margin: '20px 0 16px' }} />
+      <Card
+        type="inner"
+        size="small"
+        title={<Typography.Text strong>上传大小限制</Typography.Text>}
+        loading={uploadLoading}
+        styles={{ body: { paddingBottom: 8 } }}
+      >
+        <Form
+          form={uploadForm}
+          layout="vertical"
+          onFinish={(v) => saveUploadMut.mutate(v)}
+          disabled={saveUploadMut.isPending}
+          initialValues={{ max_upload_mb: 100 }}
+        >
+          <Form.Item
+            label="方案文件大小上限（MB）"
+            name="max_upload_mb"
+            rules={[{ required: true, message: '请填写大小' }]}
+            extra="保存后即时生效。上限取决于 nginx client_max_body_size 配置（当前 300 MB）"
+          >
+            <InputNumber min={1} max={300} precision={0} style={{ width: 280 }} />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button type="primary" htmlType="submit" loading={saveUploadMut.isPending}>
+              保存上传大小限制
+            </Button>
+          </Form.Item>
+        </Form>
+      </Card>
     </Card>
   )
 

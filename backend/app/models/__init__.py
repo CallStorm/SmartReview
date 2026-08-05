@@ -8,6 +8,7 @@ from app.models.review_runtime_settings import ReviewRuntimeSettings
 from app.models.scheme_review_task import SchemeReviewTask
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
+from app.models.upload_runtime_settings import UploadRuntimeSettings
 from app.models.user import User
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "ModelProviderSettings",
     "ReviewRuntimeSettings",
     "SchemeReviewTask",
+    "UploadRuntimeSettings",
 ]
