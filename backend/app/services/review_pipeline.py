@@ -69,6 +69,11 @@ FULL_DOCUMENT_TEXT_CAP = 80_000
 FULL_DOCUMENT_KB_CAP = 12_000
 FULL_DOCUMENT_HEADING_CATALOG_MAX = 300
 
+# 内容审核单次 LLM 调用的输出上限。节点命中多个问题时，模型需要为每个
+# 问题生成 message + evidence，8K tokens 容易在 JSON 字符串中间被截断，
+# 进而触发解析失败。提到 16K 留足余量。
+CONTENT_REVIEW_MAX_TOKENS = 16384
+
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
 {
@@ -338,6 +343,7 @@ def _llm_review_execute(
     timeout_seconds: float = 120.0,
     timeout_fail_fast: bool = False,
     system: str | None = None,
+    max_tokens: int = 8192,
 ) -> tuple[ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
     """LLM JSON 审核（不写入 task.review_log）；日志行由调用方在主线程写入。"""
     log_lines: list[LogLine] = []
@@ -357,7 +363,7 @@ def _llm_review_execute(
             db,
             user_message=user_prompt,
             system=system_prompt,
-            max_tokens=8192,
+            max_tokens=max_tokens,
             timeout=timeout_seconds,
         )
     except Exception as first:
@@ -367,22 +373,32 @@ def _llm_review_execute(
                 db,
                 user_message=user_prompt + "\n\n上一输出不是合法 JSON。请只输出一个 JSON 对象，键为 passed, summary, issues。",
                 system=system_prompt,
-                max_tokens=8192,
+                max_tokens=max_tokens,
                 timeout=timeout_seconds,
             )
         except Exception as second:
-            log_lines.append(("error", f"{step_id} LLM 失败: {second!s}"))
+            # 用户可见文案：只说结论，原始异常保留在 review_log 供排查
+            log_lines.append(
+                (
+                    "error",
+                    f"{step_id} LLM 失败（{type(second).__name__}）: {second!s}",
+                )
+            )
             if timeout_fail_fast and _is_timeout_error(second):
                 raise TimeoutError(f"{step_id} 超时（>{int(timeout_seconds)} 秒）") from second
+            friendly = (
+                "模型输出未能解析为结构化结果，请稍后重试或联系管理员。"
+                "（详细原因已写入审核日志。）"
+            )
             return (
                 ReportStep(
                     step_id=step_id,
                     passed=False,
-                    summary="模型调用或 JSON 解析失败",
+                    summary=f"模型调用或 JSON 解析失败（{type(second).__name__}）",
                     issues=[
                         ReportIssue(
                             severity="error",
-                            message=str(second),
+                            message=friendly,
                             anchor=anchor_base,
                         )
                     ],
@@ -404,6 +420,7 @@ def _llm_review(
     debug_prompts: list[dict[str, Any]] | None = None,
     timeout_seconds: float = 120.0,
     timeout_fail_fast: bool = False,
+    max_tokens: int = 8192,
 ) -> tuple[ReportStep, TokenUsage]:
     sub, usage, log_lines, dbg = _llm_review_execute(
         db,
@@ -413,6 +430,7 @@ def _llm_review(
         collect_debug=debug_prompts is not None,
         timeout_seconds=timeout_seconds,
         timeout_fail_fast=timeout_fail_fast,
+        max_tokens=max_tokens,
     )
     for level, msg in log_lines:
         _append_log(db, task, level, msg)
@@ -551,6 +569,7 @@ def _content_node_worker(
                 collect_debug=prompt_debug_enabled,
                 timeout_seconds=float(review_timeout_seconds),
                 timeout_fail_fast=True,
+                max_tokens=CONTENT_REVIEW_MAX_TOKENS,
             )
             logs.extend(ll_logs)
         except TimeoutError as e:
