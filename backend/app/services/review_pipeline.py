@@ -69,10 +69,12 @@ FULL_DOCUMENT_TEXT_CAP = 80_000
 FULL_DOCUMENT_KB_CAP = 12_000
 FULL_DOCUMENT_HEADING_CATALOG_MAX = 300
 
-# 内容审核单次 LLM 调用的输出上限。节点命中多个问题时，模型需要为每个
-# 问题生成 message + evidence，8K tokens 容易在 JSON 字符串中间被截断，
-# 进而触发解析失败。提到 16K 留足余量。
-CONTENT_REVIEW_MAX_TOKENS = 16384
+# 单次审核 LLM 调用的输出上限。覆盖 content / basis / context /
+# full_document 四类节点。节点命中多个问题时，模型需要为每个问题生成
+# message + evidence + suggestions，中文 evidence/suggestions 加上
+# JSON 转义后容易把字符串撑到 8K 以上、被截断后触发 JSON 解析失败。
+# 16K 留足余量，避免半截 JSON。
+LLM_JSON_REVIEW_MAX_TOKENS = 16384
 
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
@@ -571,7 +573,7 @@ def _content_node_worker(
                 collect_debug=prompt_debug_enabled,
                 timeout_seconds=float(review_timeout_seconds),
                 timeout_fail_fast=True,
-                max_tokens=CONTENT_REVIEW_MAX_TOKENS,
+                max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
             )
             logs.extend(ll_logs)
         except TimeoutError as e:
@@ -1257,6 +1259,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
+                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                         )
                     finally:
                         ldb.close()
@@ -1335,6 +1338,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
+                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                         )
                     finally:
                         ldb.close()
@@ -1512,6 +1516,7 @@ def run_review_pipeline(task_id: int) -> None:
                         timeout_seconds=fd_timeout,
                         timeout_fail_fast=False,
                         system=FULL_DOCUMENT_JSON_SYSTEM,
+                        max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                     )
                     for level, msg in log_lines:
                         _append_log(db, task, level, msg)
