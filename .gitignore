@@ -1,6 +1,7 @@
 .env
 .env.docker
 .env.local
+deploy.env
 *.pyc
 __pycache__/
 .venv/
