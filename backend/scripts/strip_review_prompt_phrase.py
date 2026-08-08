@@ -27,7 +27,7 @@ from app.database import SessionLocal
 from app.models.scheme_template import SchemeTemplate
 
 # 要从每个 review_prompt 里删掉的整段子串（精确匹配）
-TARGET = "同时检查该小节中是否含有错别字和错乱的序号，统一指出。序号错乱只需检查序号的数值是否错乱即可"
+TARGET = "检查该小节中是否含有错别字和错乱的序号，统一指出。序号错乱只需检查序号的数值是否错乱即可"
 
 # 打印时显示前后各多少字符的上下文
 SNIPPET_PAD = 24
