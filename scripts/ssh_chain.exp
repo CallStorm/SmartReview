@@ -1,0 +1,116 @@
+#!/usr/bin/env expect -f
+# ============================================================
+# ssh_chain.exp — 通过跳板 SSH 到目标服务器，执行一条命令
+# ============================================================
+# 用法（在 Git Bash 里）：
+#   expect scripts/ssh_chain.exp \
+#     "$SSH_BASTION_HOST" "$SSH_BASTION_USER" "$SSH_BASTION_PASSWORD" \
+#     "$SSH_TARGET_HOST"  "$SSH_TARGET_USER"  "$SSH_TARGET_PASSWORD" \
+#     "<remote_command>"
+#
+# 参数（位置参数，按顺序）：
+#   1) bastion_host
+#   2) bastion_user
+#   3) bastion_password
+#   4) target_host
+#   5) target_user
+#   6) target_password
+#   7) remote_command（可以含 && / | / > 重定向等）
+#
+# 退出码：远程命令的退出码透传；连不上 / 超时则返回非零
+# ============================================================
+
+set timeout 60
+
+set bastion_host [lindex $argv 0]
+set bastion_user [lindex $argv 1]
+set bastion_pass [lindex $argv 2]
+set target_host  [lindex $argv 3]
+set target_user  [lindex $argv 4]
+set target_pass  [lindex $argv 5]
+set remote_cmd   [lindex $argv 6]
+
+if {$bastion_host eq "" || $target_host eq "" || $remote_cmd eq ""} {
+    puts "用法: expect scripts/ssh_chain.exp <bastion_host> <bastion_user> <bastion_pass> <target_host> <target_user> <target_pass> <remote_cmd>"
+    exit 2
+}
+
+# ---- 1. SSH 到跳板 ----
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $bastion_user@$bastion_host
+expect {
+    -re "(yes/no|fingerprint)" {
+        send "yes\r"
+        exp_continue
+    }
+    "password:" {
+        send "$bastion_pass\r"
+    }
+    timeout {
+        puts "TIMEOUT: 等不到跳板密码提示"
+        exit 3
+    }
+}
+
+# ---- 2. 等跳板 shell 提示符，再 SSH 到目标 ----
+expect {
+    -re {[\$#]\s*$|} {
+        send "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $target_user@$target_host\r"
+    }
+    timeout {
+        puts "TIMEOUT: 等不到跳板 shell 提示符"
+        exit 4
+    }
+}
+
+expect {
+    -re "(yes/no|fingerprint)" {
+        send "yes\r"
+        exp_continue
+    }
+    "password:" {
+        send "$target_pass\r"
+    }
+    timeout {
+        puts "TIMEOUT: 等不到目标密码提示"
+        exit 5
+    }
+}
+
+# ---- 3. 等目标 shell 提示符，执行命令 ----
+expect {
+    -re {[\$#]\s*$|} {
+        send "$remote_cmd\r"
+    }
+    timeout {
+        puts "TIMEOUT: 等不到目标 shell 提示符"
+        exit 6
+    }
+}
+
+# ---- 4. 等命令结束，exit ----
+expect {
+    -re {[\$#]\s*$} {
+        send "echo __SSH_CHAIN_DONE__$?\r"
+    }
+    timeout {
+        puts "TIMEOUT: 命令执行超时"
+        exit 7
+    }
+}
+
+expect {
+    -re {__SSH_CHAIN_DONE__(-?[0-9]+)} {
+        set rc $expect_out(1,string)
+        send "exit\r"
+        expect {
+            -re {[\$#]\s*$} { send "exit\r" }
+            timeout {}
+        }
+        expect eof
+        exit $rc
+    }
+    timeout {
+        puts "TIMEOUT: 收不到结束标记"
+        exit 8
+    }
+}
