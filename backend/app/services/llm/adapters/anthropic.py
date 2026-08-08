@@ -118,6 +118,77 @@ def _content_list_from_response(data: dict[str, Any]) -> Any:
     return None
 
 
+# 结构化审核结果：强制 LLM 通过 tool_use 提交，避免自由文本解析失败。
+REVIEW_TOOL_NAME = "submit_review_result"
+REVIEW_TOOL_SCHEMA: dict[str, Any] = {
+    "name": REVIEW_TOOL_NAME,
+    "description": "Submit structured review result for one chapter/section",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "passed": {"type": "boolean"},
+            "summary": {"type": "string"},
+            "issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "severity": {
+                            "type": "string",
+                            "enum": ["error", "warning", "info"],
+                        },
+                        "message": {"type": "string"},
+                        "evidence": {"type": "string"},
+                        "related": {"type": "object"},
+                    },
+                    "required": ["severity", "message"],
+                },
+            },
+        },
+        "required": ["passed", "summary", "issues"],
+    },
+}
+
+
+def _find_tool_use_input(blocks: Any, tool_name: str) -> dict[str, Any] | None:
+    """遍历 content 块，匹配指定 name 的 tool_use 并返回其 input 字段。
+
+    支持嵌套结构（网关可能包了一层 data/message/result/response）。未找到返回 None。
+    """
+    if blocks is None:
+        return None
+
+    def _walk(node: Any) -> dict[str, Any] | None:
+        if isinstance(node, list):
+            for item in node:
+                got = _walk(item)
+                if got is not None:
+                    return got
+            return None
+        if not isinstance(node, dict):
+            return None
+        # 1) 节点本身就是 tool_use 块
+        if _normalize_block_type(node) == "tool_use" and node.get("name") == tool_name:
+            inp = node.get("input")
+            if isinstance(inp, dict):
+                return inp
+        # 2) Anthropic 标准 content 字段
+        if "content" in node and node["content"] is not None:
+            got = _walk(node["content"])
+            if got is not None:
+                return got
+        # 3) 网关常见的包装键（data/message/result/response）
+        for wrap_key in ("data", "message", "result", "response"):
+            sub = node.get(wrap_key)
+            if isinstance(sub, dict):
+                got = _walk(sub)
+                if got is not None:
+                    return got
+        return None
+
+    return _walk(blocks)
+
+
 def chat_anthropic_messages(
     *,
     base_url: str,
@@ -142,6 +213,10 @@ def chat_anthropic_messages(
     }
     if system.strip():
         payload["system"] = system.strip()
+    # 结构化任务：强制 tool_use，模型必须通过指定 schema 提交 JSON。
+    # 若 provider / MiniMax 网关不支持，会在响应里走 text 降级路径（见下方）。
+    payload["tools"] = [REVIEW_TOOL_SCHEMA]
+    payload["tool_choice"] = {"type": "tool", "name": REVIEW_TOOL_NAME}
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
@@ -169,6 +244,14 @@ def chat_anthropic_messages(
         raise ValueError("响应根节点不是 JSON 对象")
 
     raw_content = _content_list_from_response(data)
+    # 优先：tool_use.input 是结构化 JSON，序列化后给上游 extract_json_object 解析。
+    tool_input = _find_tool_use_input(raw_content, REVIEW_TOOL_NAME)
+    if tool_input is not None:
+        text = json.dumps(tool_input, ensure_ascii=False)
+        if include_usage:
+            return text, _extract_usage(data)
+        return text
+    # 降级：老路径（text block），网关不支持 tool_use 时仍能跑通。
     text = _collect_text_from_blocks(raw_content)
     if not text:
         raise ValueError(

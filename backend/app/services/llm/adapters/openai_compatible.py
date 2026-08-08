@@ -53,10 +53,15 @@ def chat_openai_compatible(
     if system and system.strip():
         messages.append({"role": "system", "content": system.strip()})
     messages.append({"role": "user", "content": user_message})
+    # 结构化任务（JSON 审核）：temperature=0 抑制随机性，response_format
+    # 强制模型输出 JSON 对象，从源头消灭「模型输出未能解析」类错误。
+    # 火山引擎、DeepSeek 等 OpenAI 兼容网关均支持此字段。
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
