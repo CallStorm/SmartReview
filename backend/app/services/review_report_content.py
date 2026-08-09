@@ -192,8 +192,14 @@ def status_label(status: str) -> str:
 
 
 def format_suggestions(issue: ReportIssue) -> str:
+    related = issue.related or {}
+    fix = str(related.get("fix") or "").strip()
     items = suggestions(issue)
-    return "\n".join(items) if items else "—"
+    parts: list[str] = []
+    if fix:
+        parts.append(f"改为：{fix}")
+    parts.extend(items)
+    return "\n".join(parts) if parts else "—"
 
 
 def build_summary(report: ReviewReportV1, task: SchemeReviewTask) -> str:

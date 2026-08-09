@@ -86,11 +86,16 @@ JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 
       "severity": "error",
       "message": "问题说明",
       "evidence": "文档中的依据摘录",
-      "related": { }
+      "related": {
+        "fix": "可粘贴替换的完整句子或短语（≤80字）",
+        "suggestions": ["可执行整改建议"]
+      }
     }
   ]
 }
-severity 取值仅为 error、warning、info。若无问题，issues 为 [] 且 passed 为 true。related 可为空对象。"""
+severity 取值仅为 error、warning、info。若无问题，issues 为 [] 且 passed 为 true。
+related 必须包含 fix：审核员可复制贴入文档的具体替换文本（≤80字）。
+suggestions 可选，1-3 条 ≤40字的整改路径说明。"""
 
 FULL_DOCUMENT_JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
