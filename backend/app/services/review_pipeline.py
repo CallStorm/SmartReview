@@ -855,33 +855,38 @@ def _context_prompt(
     current_text: str,
     ref_blocks: list[tuple[str, str]],
     consistency_prompt: str | None = None,
+    global_rules: str = "",
 ) -> str:
-    parts = [f"当前章节：{current_title}\n---\n{current_text[:12000]}\n"]
+    parts: list[str] = [
+        f"当前章节：{current_title}\n---\n{current_text[:12000]}",
+    ]
     for title, text in ref_blocks:
-        parts.append(f"对照章节：{title}\n---\n{text[:12000]}\n")
-    body = "\n".join(parts)
+        parts.append(f"对照章节：{title}\n---\n{text[:12000]}")
     cp = (consistency_prompt or "").strip()
     if cp:
         cp = cp[:8000]
-        return (
-            body
-            + "\n【一致性校验提示词】\n"
-            + f"{cp}\n\n"
-            + "【审核逻辑】\n"
-            + "1. 严格依据【一致性校验提示词】界定比对重点与判定标准；不得凭空增设其中未涉及的无关检查项。\n"
-            + "2. 在当前章节与对照章节之间进行交叉核对。\n"
-            + "3. 输出 JSON：issues 中说明哪两章不一致及原因；related 含 chapter_a、chapter_b，"
-            + "chapter_a 与 chapter_b 必须使用与上文「当前章节」「对照章节」标题行一致的完整层级路径，"
-            + "多级标题用「 > 」连接（例如：一、工程概况 > 1.模板支撑体系工程概况和特点），"
-            + "并给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        parts.append(f"【一致性校验提示词】\n{cp}")
+    else:
+        # 无 CP 时回退到通用检查指引
+
+        parts.append(
+            "请检查上述章节在数据、结论、术语、前后要求等方面是否一致。"
+            "输出 JSON，issues 中说明哪两章不一致及原因，"
+            "related 含 chapter_a、chapter_b（均须为完整层级路径，多级用「 > 」连接，与上文章节标题行一致），"
+            "并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
         )
-    return (
-        body
-        + "\n请检查上述章节在数据、结论、术语、前后要求等方面是否一致。输出 JSON，"
-        "issues 中说明哪两章不一致及原因，"
-        "related 含 chapter_a、chapter_b（均须为完整层级路径，多级用「 > 」连接，与上文章节标题行一致），"
-        "并补充可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+    if global_rules and global_rules.strip():
+        parts.append("【审核总则】\n" + global_rules.strip())
+    parts.append(
+        "【审核逻辑】\n"
+        "1. 严格依据【一致性校验提示词】界定比对重点与判定标准；不得凭空增设其中未涉及的无关检查项。\n"
+        "2. 在当前章节与对照章节之间进行交叉核对。\n"
+        "3. 输出 JSON：issues 中说明哪两章不一致及原因；related 含 chapter_a、chapter_b，"
+        "chapter_a 与 chapter_b 必须使用与上文「当前章节」「对照章节」标题行一致的完整层级路径，"
+        "多级标题用「 > 」连接（例如：一、工程概况 > 1.模板支撑体系工程概况和特点），"
+        "并给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
     )
+    return "\n\n".join(parts) + "\n"
 
 
 def _content_prompt(
@@ -1301,6 +1306,8 @@ def run_review_pipeline(task_id: int) -> None:
 
             elif step_id == "context_consistency":
                 merged = ReportStep(step_id=step_id, passed=True, summary="", issues=[])
+                # 复用模板级「内容审核全局规则」作为上下文一致性的【审核总则】约束
+                ctx_global_rules = (tmpl.content_review_rules or "").strip()
                 ctx_work: list[tuple[int, dict[str, Any], str, list[str]]] = []
                 cidx = 0
                 for tn in iter_nodes(template_nodes):
@@ -1332,7 +1339,7 @@ def run_review_pipeline(task_id: int) -> None:
                     }
                     raw_cp = tn.get("context_consistency_prompt")
                     cp = raw_cp.strip() if isinstance(raw_cp, str) else ""
-                    prompt = _context_prompt(cur_title, cur_text, ref_blocks, cp or None)
+                    prompt = _context_prompt(cur_title, cur_text, ref_blocks, cp or None, ctx_global_rules)
                     ref_path_strings = [str(rb[0]).strip() for rb in ref_blocks if str(rb[0]).strip()]
                     ctx_work.append((cidx, anchor, prompt, ref_path_strings))
                     cidx += 1
