@@ -213,6 +213,9 @@ def chat_anthropic_messages(
     }
     if system.strip():
         payload["system"] = system.strip()
+    # 结构化任务：与 OpenAI 兼容路径保持一致，固定 temperature=0 抑制采样随机性，
+    # 配合 tool_use 强制 JSON 输出，最大化确定性。Anthropic / MiniMax 网关均支持。
+    payload["temperature"] = 0
     # 结构化任务：强制 tool_use，模型必须通过指定 schema 提交 JSON。
     # 若 provider / MiniMax 网关不支持，会在响应里走 text 降级路径（见下方）。
     payload["tools"] = [REVIEW_TOOL_SCHEMA]
