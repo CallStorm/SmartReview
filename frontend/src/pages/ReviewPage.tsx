@@ -9,6 +9,7 @@ import {
   FileTextOutlined,
   FileWordOutlined,
   ProfileOutlined,
+  SafetyCertificateOutlined,
   UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
@@ -32,6 +33,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ReviewTask, SchemeType, UploadSettings } from '../api/types'
+import ReviewSelfCheckModal from '../components/ReviewSelfCheckModal'
 import { useAuth } from '../auth/AuthContext'
 import PageShell from '../components/PageShell'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
@@ -172,6 +174,7 @@ export default function ReviewPage() {
   const [submitOpen, setSubmitOpen] = useState(false)
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [logModalTaskId, setLogModalTaskId] = useState<number | null>(null)
+  const [selfCheckTask, setSelfCheckTask] = useState<ReviewTask | null>(null)
   const [logLoading, setLogLoading] = useState(false)
   const [logContent, setLogContent] = useState<string | null>(null)
 
@@ -556,6 +559,25 @@ export default function ReviewPage() {
                     {isAdmin ? (
                       <Tooltip
                         title={
+                          row.status === 'succeeded'
+                            ? 'AI 测评：体检 + 对抗复核，评估这次审核有没有漏掉/误报'
+                            : '仅成功完成的任务可测评'
+                        }
+                      >
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<SafetyCertificateOutlined />}
+                          disabled={row.status !== 'succeeded'}
+                          onClick={() => setSelfCheckTask(row)}
+                        >
+                          AI测评
+                        </Button>
+                      </Tooltip>
+                    ) : null}
+                    {isAdmin ? (
+                      <Tooltip
+                        title={
                           taskEnded
                             ? undefined
                             : '任务处理结束后（已完成或失败）可导出 Word 版审核报告'
@@ -711,6 +733,13 @@ export default function ReviewPage() {
           </pre>
         )}
       </Modal>
+
+      <ReviewSelfCheckModal
+        open={!!selfCheckTask}
+        taskId={selfCheckTask?.id ?? 0}
+        filename={selfCheckTask?.original_filename ?? ''}
+        onClose={() => setSelfCheckTask(null)}
+      />
     </div>
   )
 }

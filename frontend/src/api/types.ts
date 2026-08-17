@@ -56,11 +56,22 @@ export interface DeepseekSettingsPart {
   api_key_configured: boolean
 }
 
+/** 图审核（视觉模型）：复用 MiniMax 凭据，独立模型名与护栏 */
+export interface ImageReviewSettingsPart {
+  enabled: boolean
+  model: string
+  base_url: string
+  api_key_configured: boolean
+  max_side: number
+  max_per_node: number
+}
+
 export interface ModelProviderSettings {
   default_provider: ProviderId | null
   volcengine: VolcengineSettingsPart
   minimax: MinimaxSettingsPart
   deepseek: DeepseekSettingsPart
+  image_review: ImageReviewSettingsPart
 }
 
 export interface ModelTestResult {
@@ -153,6 +164,13 @@ export interface TemplateNode {
   dify_dataset_id?: string | null
   knowledge_keywords?: string[]
   review_prompt?: string
+  /** 图审核配置：勾选式三类检查（存在性/图种/内容要素）+ 补充说明 */
+  image_review?: {
+    enabled: boolean
+    existence?: { enabled?: boolean; note?: string }
+    kind?: { enabled?: boolean; note?: string }
+    content?: { enabled?: boolean; note?: string }
+  }
 }
 
 export interface TemplatePublic {
@@ -165,6 +183,7 @@ export interface TemplatePublic {
   review_workflow: ReviewWorkflowData | null
   full_document_review_config?: FullDocumentReviewConfig | null
   content_review_rules?: string | null
+  image_review_rules?: string | null
   structure_match_mode: StructureMatchMode
   parsed_at: string | null
   updated_at: string | null
@@ -187,6 +206,20 @@ export interface ReportStep {
   summary: string
   issues: ReportIssue[]
   mappings?: StructureMapping[]
+  /** 图审核逐图结果：{image_object_key, image_caption, passed, summary, issues:[...]} */
+  image_items?: ImageReviewItem[]
+}
+
+export interface ImageReviewItem {
+  template_node_id?: string
+  title_path?: string[]
+  /** 审图类别：existence（存在性）/ kind（图种识别）/ content（内容要素）/ 组合 */
+  review_category?: string
+  image_object_key: string
+  image_caption?: string
+  passed: boolean
+  summary: string
+  issues?: { severity: string; message: string; evidence?: string }[]
 }
 
 export interface ReviewReportV1 {
@@ -232,6 +265,11 @@ export interface DebugPromptItem {
   prompt_text: string
   prompt_length: number
   created_at: string
+  /** 图审核专用 */
+  image_object_key?: string
+  image_caption?: string
+  model_passed?: boolean | null
+  model_summary?: string
 }
 
 export interface DashboardTaskByDay {

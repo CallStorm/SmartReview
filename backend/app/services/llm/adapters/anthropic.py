@@ -199,15 +199,27 @@ def chat_anthropic_messages(
     max_tokens: int = 1024,
     timeout: float = 60.0,
     include_usage: bool = False,
+    images: list[tuple[str, str]] | None = None,
 ) -> str | tuple[str, dict[str, int | None]]:
+    """images: [(media_type, base64_data), ...]，Anthropic image block 形式
+    置于文本块之前（MiniMax 视觉模型兼容）。"""
     url = _messages_url(base_url)
+    content_blocks: list[dict[str, Any]] = []
+    for media_type, b64_data in images or []:
+        content_blocks.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64_data},
+            }
+        )
+    content_blocks.append({"type": "text", "text": user_message})
     payload: dict[str, Any] = {
         "model": model,
         "max_tokens": max_tokens,
         "messages": [
             {
                 "role": "user",
-                "content": [{"type": "text", "text": user_message}],
+                "content": content_blocks,
             }
         ],
     }

@@ -82,6 +82,13 @@ class ContentReviewRulesUpdate(BaseModel):
     content_review_rules: str = ""
 
 
+class ImageReviewRulesUpdate(BaseModel):
+    """模板级「图审核全局规则」：注入到每个图审核节点的视觉模型 prompt。
+    空字符串表示未设置。"""
+
+    image_review_rules: str = ""
+
+
 class TemplateStructureUpdate(BaseModel):
     """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/编制依据开关/上下文一致性比对与一致性提示词等配置）。"""
 
@@ -98,6 +105,7 @@ class TemplatePublic(BaseModel):
     review_workflow: dict[str, Any] | None = None
     full_document_review_config: dict[str, Any] | None = None
     content_review_rules: str | None = None
+    image_review_rules: str | None = None
     structure_match_mode: str = "exact"
     parsed_at: datetime | None
     updated_at: datetime | None
@@ -111,3 +119,46 @@ class TemplateUploadResponse(BaseModel):
 class DownloadUrlResponse(BaseModel):
     url: str
     expires_seconds: int
+
+
+class PromptHistoryEntry(BaseModel):
+    id: int
+    node_id: str
+    field: str
+    node_title: str
+    old_value: str
+    new_value: str
+    source: str
+    changed_by: str
+    changed_at: datetime
+
+
+class PromptHistoryListResponse(BaseModel):
+    items: list[PromptHistoryEntry]
+
+
+class SplitPreviewRequest(BaseModel):
+    node_id: str = ""
+    review_prompt: str = ""
+
+
+class SplitPreviewItem(BaseModel):
+    id: str
+    text: str
+
+
+class SplitPreviewResponse(BaseModel):
+    items: list[SplitPreviewItem]
+    notes: list[str]
+
+
+class OptimizePromptRequest(BaseModel):
+    kind: Literal["review_prompt", "context_consistency_prompt"] = "review_prompt"
+    node_title: str = ""
+    scheme_name: str = ""
+    current_text: str = ""
+
+
+class OptimizePromptResponse(BaseModel):
+    optimized_text: str
+    changes: list[str] = Field(default_factory=list)

@@ -1,8 +1,9 @@
-import { FormOutlined } from '@ant-design/icons'
+import { FormOutlined, HistoryOutlined, RobotOutlined } from '@ant-design/icons'
 import {
   App as AntApp,
   Button,
   Card,
+  Checkbox,
   Divider,
   Input,
   Modal,
@@ -22,6 +23,9 @@ import { api } from '../api/client'
 import type { DifyDatasetItem, SchemeType, TemplateNode, TemplatePublic, UploadSettings } from '../api/types'
 import PageShell from '../components/PageShell'
 import FullDocumentReviewModal from '../components/FullDocumentReviewModal'
+import PromptHistoryModal from '../components/PromptHistoryModal'
+import PromptOptimizeModal from '../components/PromptOptimizeModal'
+import PromptRegressionModal from '../components/PromptRegressionModal'
 import ReviewWorkflowModal from '../components/ReviewWorkflowModal'
 import { DEFAULT_TABLE_PAGINATION } from '../config/tablePagination'
 import {
@@ -91,6 +95,15 @@ export default function TemplatesPage() {
   const [structureDraft, setStructureDraft] = useState<{ nodes: TemplateNode[] } | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [globalRulesDraft, setGlobalRulesDraft] = useState<string>('')
+  const [imageRulesDraft, setImageRulesDraft] = useState<string>('')
+  const [historyCtx, setHistoryCtx] = useState<{ nodeId: string; field: string; title: string } | null>(null)
+  const [regressionOpen, setRegressionOpen] = useState(false)
+  const [optimizeCtx, setOptimizeCtx] = useState<{
+    kind: 'review_prompt' | 'context_consistency_prompt'
+    currentText: string
+  } | null>(null)
+  const [splitPreview, setSplitPreview] = useState<{ items: { id: string; text: string }[]; notes: string[] } | null>(null)
+  const [splitLoading, setSplitLoading] = useState(false)
 
   const { data: difyDatasets = [], isLoading: datasetsLoading } = useQuery({
     queryKey: ['dify-datasets'],
@@ -203,10 +216,74 @@ export default function TemplatesPage() {
     },
   })
 
+  const saveImageRulesMut = useMutation({
+    mutationFn: async (rules: string) => {
+      if (!preview?.scheme_type_id) {
+        throw new Error('缺少方案 id')
+      }
+      const { data } = await api.put<TemplatePublic>(
+        `/scheme-types/${preview.scheme_type_id}/template/image-review-rules`,
+        { image_review_rules: rules },
+      )
+      return data
+    },
+    onSuccess: (updated) => {
+      message.success('已保存图审核全局规则')
+      setPreview(updated)
+      setImageRulesDraft(updated.image_review_rules ?? '')
+      void qc.invalidateQueries({ queryKey: ['schemes'] })
+    },
+    onError: (err: unknown) => {
+      const raw =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+          : undefined
+      message.error(typeof raw === 'string' ? raw : '保存失败')
+    },
+  })
+
   const selectedNode = useMemo(() => {
     if (!selectedNodeId || !structureDraft?.nodes.length) return null
     return findNodeById(structureDraft.nodes, selectedNodeId)
   }, [selectedNodeId, structureDraft])
+
+  // 拆分预览：审核提示词变化 600ms 后自动刷新（确定性，不调 LLM）
+  const reviewPromptForPreview = selectedNode?.review_prompt ?? ''
+  const previewNodeId = selectedNode?.id ?? ''
+  const previewSchemeId = preview?.scheme_type_id ?? 0
+  useEffect(() => {
+    if (!previewSchemeId || !previewNodeId) {
+      setSplitPreview(null)
+      return
+    }
+    if (!reviewPromptForPreview.trim()) {
+      setSplitPreview(null)
+      return
+    }
+    let cancelled = false
+    setSplitLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.post<{
+          items: { id: string; text: string }[]
+          notes: string[]
+        }>(`/scheme-types/${previewSchemeId}/template/split-preview`, {
+          node_id: previewNodeId,
+          review_prompt: reviewPromptForPreview,
+        })
+        if (!cancelled) setSplitPreview(data)
+      } catch {
+        if (!cancelled) setSplitPreview(null)
+      } finally {
+        if (!cancelled) setSplitLoading(false)
+      }
+    }, 600)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      setSplitLoading(false)
+    }
+  }, [previewSchemeId, previewNodeId, reviewPromptForPreview])
 
   const refPickerItems = useMemo(() => {
     if (!structureDraft?.nodes.length) return []
@@ -293,6 +370,7 @@ export default function TemplatesPage() {
                       )
                       setPreview(data)
                       setGlobalRulesDraft(data.content_review_rules ?? '')
+                      setImageRulesDraft(data.image_review_rules ?? '')
                     } catch {
                       message.warning('该方案尚未上传模版')
                     }
@@ -416,6 +494,57 @@ export default function TemplatesPage() {
             >
               保存全局规则
             </Button>
+            <Button
+              icon={<HistoryOutlined />}
+              disabled={!preview?.scheme_type_id}
+              onClick={() =>
+                setHistoryCtx({ nodeId: '', field: 'content_review_rules', title: '内容审核全局规则' })
+              }
+            >
+              历史
+            </Button>
+            <Button
+              disabled={!preview?.scheme_type_id}
+              onClick={() => setRegressionOpen(true)}
+            >
+              回归测试
+            </Button>
+          </Space>
+        </Card>
+        <Card
+          size="small"
+          type="inner"
+          title="图审核全局规则"
+          styles={{ body: { paddingBottom: 8 } }}
+          style={{ marginBottom: 12 }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 8 }}>
+            模板级规则。注入到每个配置了图审核的节点的视觉模型 prompt，作为图件判定的通用约束；
+            不影响内容审核、上下文一致性等文本步骤。
+          </Typography.Paragraph>
+          <Input.TextArea
+            rows={3}
+            value={imageRulesDraft}
+            onChange={(e) => setImageRulesDraft(e.target.value)}
+            placeholder="例如：图例与标注应齐全可辨；手绘草图视为不满足要求…"
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button
+              type="primary"
+              loading={saveImageRulesMut.isPending}
+              onClick={() => saveImageRulesMut.mutate(imageRulesDraft)}
+            >
+              保存图审核规则
+            </Button>
+            <Button
+              icon={<HistoryOutlined />}
+              disabled={!preview?.scheme_type_id}
+              onClick={() =>
+                setHistoryCtx({ nodeId: '', field: 'image_review_rules', title: '图审核全局规则' })
+              }
+            >
+              历史
+            </Button>
           </Space>
         </Card>
         <Divider style={{ margin: '0 0 12px' }} />
@@ -506,12 +635,68 @@ export default function TemplatesPage() {
                   <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
                     审核提示词
                   </Divider>
+                  <Space style={{ marginBottom: 8 }}>
+                    <Button
+                      size="small"
+                      icon={<HistoryOutlined />}
+                      onClick={() =>
+                        setHistoryCtx({
+                          nodeId: selectedNode.id,
+                          field: 'review_prompt',
+                          title: `${selectedNode.title} · 审核提示词`,
+                        })
+                      }
+                    >
+                      历史
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<RobotOutlined />}
+                      disabled={!selectedNode.review_prompt?.trim()}
+                      onClick={() =>
+                        setOptimizeCtx({
+                          kind: 'review_prompt',
+                          currentText: selectedNode.review_prompt ?? '',
+                        })
+                      }
+                    >
+                      AI优化
+                    </Button>
+                  </Space>
                   <Input.TextArea
                     rows={6}
-                    placeholder="填写该节点审核时的提示说明…"
+                    placeholder="填写该节点审核时的提示说明…（一句一行一条检查项，下行实时显示拆分结果）"
                     value={selectedNode.review_prompt ?? ''}
                     onChange={(e) => patchSelected({ review_prompt: e.target.value })}
                   />
+                  <Card size="small" style={{ marginTop: 8 }} styles={{ body: { padding: 8 } }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      拆分预览{splitLoading ? '（更新中…）' : ''}
+                      {splitPreview
+                        ? `：共 ${splitPreview.items.length} 条检查项${splitPreview.notes.length ? `，${splitPreview.notes.length} 条判定附注` : ''}`
+                        : ''}
+                    </Typography.Text>
+                    {splitPreview && (
+                      <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                        {splitPreview.items.map((it) => (
+                          <li key={it.id} style={{ fontSize: 12 }}>
+                            <Typography.Text code>{it.id}</Typography.Text>{' '}
+                            <Typography.Text style={{ fontSize: 12 }}>{it.text}</Typography.Text>
+                          </li>
+                        ))}
+                        {splitPreview.notes.map((n, i) => (
+                          <li key={`note-${i}`} style={{ fontSize: 12 }}>
+                            <Tag color="default" style={{ fontSize: 11 }}>
+                              附注
+                            </Tag>
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              {n}
+                            </Typography.Text>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Card>
                   <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
                     上下文一致性校验
                   </Divider>
@@ -532,6 +717,34 @@ export default function TemplatesPage() {
                   <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
                     可选：填写本节点一致性检查的重点、术语口径、数据字段对应关系等，供模型在比对时遵循
                   </Typography.Paragraph>
+                  <Space style={{ marginTop: 4, marginBottom: 8 }}>
+                    <Button
+                      size="small"
+                      icon={<HistoryOutlined />}
+                      onClick={() =>
+                        setHistoryCtx({
+                          nodeId: selectedNode.id,
+                          field: 'context_consistency_prompt',
+                          title: `${selectedNode.title} · 上下文一致性提示词`,
+                        })
+                      }
+                    >
+                      历史
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<RobotOutlined />}
+                      disabled={!selectedNode.context_consistency_prompt?.trim()}
+                      onClick={() =>
+                        setOptimizeCtx({
+                          kind: 'context_consistency_prompt',
+                          currentText: selectedNode.context_consistency_prompt ?? '',
+                        })
+                      }
+                    >
+                      AI优化
+                    </Button>
+                  </Space>
                   <Input.TextArea
                     rows={4}
                     placeholder="例如：重点核对工程量与附件表是否一致；术语「开挖」与「土方开挖」视为同义…"
@@ -553,6 +766,108 @@ export default function TemplatesPage() {
                       unCheckedChildren="关"
                     />
                   </Space>
+                  <Divider orientationMargin={0} style={{ margin: '12px 0' }}>
+                    图审核
+                  </Divider>
+                  <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+                    审核本章节（含子章节）的附图，与内容审核相互独立。「是否有图」为确定性检查不耗模型；
+                    「图种」「内容要素」逐图调用视觉模型判定。配置随结构一并保存。
+                  </Typography.Paragraph>
+                  {(() => {
+                    const imgCfg = selectedNode.image_review
+                    const setImg = (patch: Partial<NonNullable<TemplateNode['image_review']>>) => {
+                      const base = imgCfg ?? { enabled: true }
+                      patchSelected({ image_review: { ...base, ...patch } })
+                    }
+                    const setCat = (
+                      cat: 'existence' | 'kind' | 'content',
+                      patch: { enabled?: boolean; note?: string },
+                    ) => {
+                      setImg({ [cat]: { ...(imgCfg?.[cat] ?? {}), ...patch } })
+                    }
+                    return (
+                      <div>
+                        <Space align="center" size="middle" style={{ marginBottom: 8 }}>
+                          <Typography.Text>启用图审核</Typography.Text>
+                          <Switch
+                            checked={imgCfg?.enabled === true}
+                            onChange={(on) => setImg({ enabled: on })}
+                            checkedChildren="开"
+                            unCheckedChildren="关"
+                          />
+                          <Button
+                            size="small"
+                            icon={<HistoryOutlined />}
+                            onClick={() =>
+                              setHistoryCtx({
+                                nodeId: selectedNode.id,
+                                field: 'image_review',
+                                title: `${selectedNode.title} · 图审核配置`,
+                              })
+                            }
+                          >
+                            历史
+                          </Button>
+                        </Space>
+                        {imgCfg?.enabled ? (
+                          <div style={{ display: 'grid', gap: 10 }}>
+                            {(
+                              [
+                                {
+                                  key: 'existence' as const,
+                                  label: '是否有图',
+                                  hint: '确定性检查：子树内存在附图即通过，无需模型。补充说明写图件名，缺图时随问题展示',
+                                  ph: '如：施工总平面布置图、悬挑区域结构平面布置图',
+                                },
+                                {
+                                  key: 'kind' as const,
+                                  label: '图种识别',
+                                  hint: '视觉模型判断图片是否为要求的图种（如路线图、布置图，而非无关照片）',
+                                  ph: '如：本图应为应急救援路线图',
+                                },
+                                {
+                                  key: 'content' as const,
+                                  label: '内容要素',
+                                  hint: '视觉模型逐图核对图上应标明的要素是否齐全',
+                                  ph: '如：应标明集合点、疏散路线方向、安全出口位置',
+                                },
+                              ] as const
+                            ).map((row) => (
+                              <div
+                                key={row.key}
+                                style={{
+                                  border: '1px solid var(--ant-color-split, #f0f0f0)',
+                                  borderRadius: 6,
+                                  padding: '6px 10px',
+                                }}
+                              >
+                                <Checkbox
+                                  checked={imgCfg?.[row.key]?.enabled === true}
+                                  onChange={(e) => setCat(row.key, { enabled: e.target.checked })}
+                                >
+                                  <Typography.Text strong>{row.label}</Typography.Text>
+                                </Checkbox>
+                                <Typography.Text
+                                  type="secondary"
+                                  style={{ display: 'block', fontSize: 12, margin: '2px 0 6px' }}
+                                >
+                                  {row.hint}
+                                </Typography.Text>
+                                {imgCfg?.[row.key]?.enabled ? (
+                                  <Input.TextArea
+                                    rows={2}
+                                    value={imgCfg?.[row.key]?.note ?? ''}
+                                    onChange={(e) => setCat(row.key, { note: e.target.value })}
+                                    placeholder={row.ph}
+                                  />
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -563,6 +878,38 @@ export default function TemplatesPage() {
           </Typography.Text>
         )}
       </Modal>
+
+      <PromptHistoryModal
+        open={!!historyCtx}
+        schemeTypeId={preview?.scheme_type_id ?? 0}
+        nodeId={historyCtx?.nodeId ?? ''}
+        field={historyCtx?.field ?? ''}
+        title={historyCtx?.title ?? ''}
+        onClose={() => setHistoryCtx(null)}
+        onRestored={(updated) => setPreview(updated)}
+      />
+
+      <PromptRegressionModal
+        open={regressionOpen}
+        schemeTypeId={preview?.scheme_type_id ?? 0}
+        schemeName={preview?.original_filename ?? ''}
+        onClose={() => setRegressionOpen(false)}
+      />
+
+      <PromptOptimizeModal
+        open={!!optimizeCtx}
+        schemeTypeId={preview?.scheme_type_id ?? 0}
+        kind={optimizeCtx?.kind ?? 'review_prompt'}
+        nodeTitle={selectedNode?.title ?? ''}
+        schemeName={preview ? `${preview.original_filename ?? ''}` : ''}
+        currentText={optimizeCtx?.currentText ?? ''}
+        onClose={() => setOptimizeCtx(null)}
+        onApply={(text) => {
+          if (!optimizeCtx) return
+          patchSelected({ [optimizeCtx.kind]: text } as Partial<TemplateNode>)
+          message.info('已填入优化结果，请核对后点「更新」保存')
+        }}
+      />
 
       <ReviewWorkflowModal
         open={!!workflowScheme}

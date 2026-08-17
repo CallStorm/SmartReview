@@ -46,6 +46,10 @@ type ModelForm = {
   deepseek_base_url: string
   deepseek_api_key?: string
   deepseek_model: string
+  image_review_enabled: boolean
+  image_review_model: string
+  image_review_max_side: number
+  image_review_max_per_node: number
 }
 
 type OnlyofficeForm = {
@@ -178,6 +182,10 @@ export default function SettingsPage() {
         deepseek_base_url: modelData.deepseek.base_url,
         deepseek_api_key: '',
         deepseek_model: modelData.deepseek.model,
+        image_review_enabled: modelData.image_review?.enabled ?? false,
+        image_review_model: modelData.image_review?.model ?? '',
+        image_review_max_side: modelData.image_review?.max_side ?? 1536,
+        image_review_max_per_node: modelData.image_review?.max_per_node ?? 10,
       })
     }
   }, [modelData, modelForm])
@@ -265,6 +273,10 @@ export default function SettingsPage() {
         minimax_model: values.minimax_model.trim(),
         deepseek_base_url: values.deepseek_base_url.trim(),
         deepseek_model: values.deepseek_model.trim(),
+        image_review_enabled: Boolean(values.image_review_enabled),
+        image_review_model: (values.image_review_model || '').trim(),
+        image_review_max_side: Number(values.image_review_max_side) || 1536,
+        image_review_max_per_node: Number(values.image_review_max_per_node) || 10,
       }
       const vk = values.volcengine_api_key?.trim()
       if (vk) payload.volcengine_api_key = vk
@@ -1009,6 +1021,70 @@ export default function SettingsPage() {
             </Card>
           </Col>
         </Row>
+
+        <Card
+          size="small"
+          title={
+            <Space size={4}>
+              <span>图审核（视觉模型）</span>
+              <Tag style={{ marginInlineEnd: 0 }}>MiniMax · Anthropic</Tag>
+            </Space>
+          }
+          style={{ marginTop: 16 }}
+          loading={modelLoading}
+          styles={{ body: { paddingBlock: 12 } }}
+          extra={
+            modelData?.image_review?.enabled ? (
+              <Tag color="processing" style={{ margin: 0 }}>
+                已启用
+              </Tag>
+            ) : (
+              <Tag style={{ margin: 0 }}>未启用</Tag>
+            )
+          }
+        >
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            审核文档附图（图件存在性、图种与内容要素），复用上方 MiniMax 接入地址与密钥，
+            此处仅需视觉模型名与护栏。未启用或凭据不全时图审核自动跳过。
+          </Typography.Paragraph>
+          <Row gutter={[16, 0]}>
+            <Col xs={24} md={4}>
+              <Form.Item label="启用图审核" name="image_review_enabled" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                label="视觉模型名"
+                name="image_review_model"
+                tooltip="MiniMax 视觉模型，如 MiniMax-VL-01"
+              >
+                <Input placeholder="MiniMax-VL-01" autoComplete="off" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item
+                label="送审压缩长边（px）"
+                name="image_review_max_side"
+                tooltip="图片送审前内部压缩到长边不超过该值，越大越清晰、token 越多"
+              >
+                <InputNumber min={256} max={8192} step={128} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item
+                label="单节点图数上限"
+                name="image_review_max_per_node"
+                tooltip="超出上限的附图标记为未审核，防止超大文档拖垮审核"
+              >
+                <InputNumber min={1} max={100} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button type="primary" size="small" htmlType="submit" loading={saveModelMut.isPending}>
+            保存
+          </Button>
+        </Card>
       </Form>
 
       <Typography.Paragraph style={{ marginBottom: 8 }}>

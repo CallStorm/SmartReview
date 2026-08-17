@@ -95,6 +95,13 @@ def original_text(issue: ReportIssue) -> str:
     return str(issue.evidence or "").strip()
 
 
+def check_item_label(issue: ReportIssue) -> str:
+    """问题对应的检查项标注（逐项清单审核产出），形如【检查项 n20-1】。"""
+    related = issue.related or {}
+    iid = str(related.get("check_item_id") or "").strip()
+    return f"【检查项 {iid}】" if iid else ""
+
+
 def suggestions(issue: ReportIssue) -> list[str]:
     related = issue.related or {}
     out: list[str] = []
@@ -304,10 +311,12 @@ def content_like_groups(step: ReportStep) -> list[tuple[str, list[list[str]]]]:
     for chapter, issues in grouped.items():
         rows: list[list[str]] = []
         for idx, issue in enumerate(issues, start=1):
+            label = check_item_label(issue)
+            message = f"{label}{issue.message}" if label else issue.message
             rows.append(
                 [
                     str(idx),
-                    issue.message,
+                    message,
                     original_text(issue) or "无",
                     format_suggestions(issue),
                 ]

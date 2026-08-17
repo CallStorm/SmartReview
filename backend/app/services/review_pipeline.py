@@ -25,6 +25,11 @@ from app.models.scheme_type import SchemeType
 from app.schemas.review_report import ReportIssue, ReportStep, ReviewReportV1
 from app.schemas.template import FullDocumentReviewConfig, ReviewWorkflowData
 from app.services import minio_storage
+from app.services.checklist import (
+    build_checklist_block,
+    checklist_signature,
+    split_check_items,
+)
 from app.services.doc_tree_utils import (
     UserHeadingEntry,
     build_user_heading_index,
@@ -42,7 +47,15 @@ from app.services.docx_comments import inject_comments_at_paragraphs
 from app.services.dify_client import retrieve_dataset_chunks
 from app.services.dify_settings import get_dify_url_and_key
 from app.services.llm.chat import EMPTY_USAGE, TokenUsage, chat_json_with_usage
-from app.services.llm.resolve import effective_default_provider
+from app.services.llm.resolve import effective_default_provider, effective_image_review
+from app.services.image_review import IMAGE_STEP_ID, parse_node_image_config, review_node_images
+from app.services.review_cache import (
+    cache_lookup,
+    cache_store,
+    node_fingerprint,
+    prompt_fingerprint,
+    provider_model_pair,
+)
 from app.services.review_settings import (
     get_compilation_basis_concurrency,
     get_content_concurrency,
@@ -63,11 +76,17 @@ WORD_COMMENT_STEP_LABEL_CN: dict[str, str] = {
     "context_consistency": "上下文一致性",
     "content": "内容审核",
     "full_document": "通篇审核",
+    "image_review": "图审核",
 }
 
 FULL_DOCUMENT_TEXT_CAP = 80_000
 FULL_DOCUMENT_KB_CAP = 12_000
 FULL_DOCUMENT_HEADING_CATALOG_MAX = 300
+
+# 内容审核 per-node 输入截断上限（超长正文截断并在 prompt 中注明）
+CONTENT_TEXT_CAP = 16_000
+CONTENT_REF_TEXT_CAP = 12_000
+CONTENT_KB_TEXT_CAP = 12_000
 
 # 单次审核 LLM 调用的输出上限。覆盖 content / basis / context /
 # full_document 四类节点。节点命中多个问题时，模型需要为每个问题生成
@@ -96,6 +115,40 @@ JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 
 severity 取值仅为 error、warning、info。若无问题，issues 为 [] 且 passed 为 true。
 related 必须包含 fix：审核员可复制贴入文档的具体替换文本（≤80字）。
 suggestions 可选，1-3 条 ≤40字的整改路径说明。"""
+
+# 内容审核（per-node）专用系统提示词：逐项清单判定。
+# 与 JSON_SYSTEM 的差异：不输出自由 issues，而是对【检查项清单】中的
+# 每个 item_id 恰好回填一次判定（pass/fail/na），保证同一文档多次审核
+# 的覆盖面一致（不漏检、不越权新增检查项）。
+CONTENT_JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
+格式严格如下：
+{
+  "passed": true 或 false,
+  "summary": "一句话摘要",
+  "checks": [
+    {
+      "item_id": "检查项清单中的 item_id",
+      "verdict": "pass 或 fail 或 na",
+      "severity": "error",
+      "message": "问题说明（仅 verdict=fail 时填写）",
+      "evidence": "文档中的依据摘录（仅 verdict=fail 时填写）",
+      "related": {
+        "fix": "可粘贴替换的完整句子或短语（≤80字）",
+        "suggestions": ["可执行整改建议"]
+      }
+    }
+  ]
+}
+规则：
+- checks 必须覆盖【检查项清单】中的每一个 item_id，每个恰好出现一次；不得遗漏、不得新增清单之外的 item_id。
+- verdict 取值：pass=符合；fail=不符合；na=该项必须依赖引用章节或知识库才能判断、而两者均为“(无)”。
+- verdict=pass 时，evidence 必须填写正文中能证明该内容存在的原文引文（≤50 字）——找不到可引用的原文时
+  不得判 pass，应按【审核总则】“未给出”处理（verdict=fail）。
+- verdict=pass 或 na 时，message、related 留空（severity 填 warning 即可）。
+- fail 时 severity 取值仅为 error、warning、info，判定档次遵循【审核总则】。
+- 全部通过时 checks 每项 verdict 均为 pass，且 passed 为 true。
+- fail 时 related 必须包含 fix：审核员可复制贴入文档的具体替换文本（≤80字）；
+  suggestions 可选，1-3 条 ≤40字的整改路径说明。"""
 
 FULL_DOCUMENT_JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
@@ -337,6 +390,89 @@ def _normalize_llm_step(
     )
 
 
+def _normalize_content_checks(
+    step_id: str,
+    data: dict[str, Any],
+    anchor_base: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> tuple[ReportStep | None, list[LogLine]]:
+    """把 LLM 的 checks[] 逐项判定归一化为 ReportStep。
+
+    返回 (step, logs)；当模型未按清单格式输出（无 checks 或非 list）时
+    step 为 None，调用方降级走 _normalize_llm_step（旧 issues 路径）。
+
+    程序性约束（对应「内容审核全局规则」的硬性落地）：
+    - 仅清单内的 item_id 可产生 issue，清单外的一律丢弃并记日志；
+    - 每个检查项最多 1 条 issue（重复回填仅保留首条）；
+    - issue.related 附 check_item_id / check_item，保证问题可溯源到配置规则。
+    """
+    logs: list[LogLine] = []
+    raw_checks = data.get("checks")
+    if not isinstance(raw_checks, list) or not raw_checks:
+        logs.append(("warning", f"{step_id} 模型未按检查项清单输出 checks，降级为 issues 解析"))
+        return None, logs
+    item_map = {str(it.get("id")): it for it in items}
+    issues: list[ReportIssue] = []
+    seen: set[str] = set()
+    pass_without_evidence: list[str] = []
+    for c in raw_checks:
+        if not isinstance(c, dict):
+            continue
+        iid = str(c.get("item_id") or "").strip()
+        verdict = str(c.get("verdict") or "").strip().lower()
+        if iid not in item_map:
+            logs.append(("warning", f"{step_id} 输出的检查项 {iid or '(空)'} 不在清单内，已丢弃"))
+            continue
+        if iid in seen:
+            logs.append(("warning", f"{step_id} 检查项 {iid} 重复输出，仅保留首条"))
+            continue
+        seen.add(iid)
+        if verdict != "fail":
+            if verdict == "pass" and not str(c.get("evidence") or "").strip():
+                pass_without_evidence.append(iid)
+            continue
+        sev = str(c.get("severity") or "error")
+        if sev not in ("error", "warning", "info"):
+            sev = "error"
+        rel = c.get("related")
+        rel = dict(rel) if isinstance(rel, dict) else {}
+        rel["check_item_id"] = iid
+        rel["check_item"] = str(item_map[iid].get("text") or "")
+        message = str(c.get("message") or "").strip()
+        issues.append(
+            ReportIssue(
+                severity=sev,  # type: ignore[arg-type]
+                message=message or f"检查项 {iid} 不符合：{rel['check_item']}",
+                evidence=str(c.get("evidence") or ""),
+                anchor=dict(anchor_base),
+                related=rel,
+            )
+        )
+    missing = [str(it.get("id")) for it in items if str(it.get("id")) not in seen]
+    if missing:
+        logs.append(
+            ("warning", f"{step_id} 模型漏判 {len(missing)} 个检查项: {', '.join(missing)}")
+        )
+    if pass_without_evidence:
+        logs.append(
+            (
+                "warning",
+                f"{step_id} {len(pass_without_evidence)} 个检查项判 pass 但未附原文引文"
+                f"（存在凭印象通过的风险）: {', '.join(pass_without_evidence)}",
+            )
+        )
+    passed = not issues
+    return (
+        ReportStep(
+            step_id=step_id,
+            passed=passed,
+            summary=str(data.get("summary") or ""),
+            issues=issues,
+        ),
+        logs,
+    )
+
+
 LogLine = tuple[str, str]
 
 
@@ -351,8 +487,13 @@ def _llm_review_execute(
     timeout_fail_fast: bool = False,
     system: str | None = None,
     max_tokens: int = 8192,
+    normalize_fn: Callable[[dict[str, Any], dict[str, Any]], tuple[ReportStep | None, list[LogLine]]] | None = None,
 ) -> tuple[ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
-    """LLM JSON 审核（不写入 task.review_log）；日志行由调用方在主线程写入。"""
+    """LLM JSON 审核（不写入 task.review_log）；日志行由调用方在主线程写入。
+
+    `normalize_fn`：自定义 (data, anchor_base) -> (ReportStep | None, logs)。
+    返回 None 时降级用默认 _normalize_llm_step（如模型未按 checks 格式输出）。
+    """
     log_lines: list[LogLine] = []
     debug_entry: dict[str, Any] | None = None
     system_prompt = system or JSON_SYSTEM
@@ -378,7 +519,8 @@ def _llm_review_execute(
         try:
             data, usage = chat_json_with_usage(
                 db,
-                user_message=user_prompt + "\n\n上一输出不是合法 JSON。请只输出一个 JSON 对象，键为 passed, summary, issues。",
+                user_message=user_prompt + "\n\n上一输出不是合法 JSON。请只输出一个 JSON 对象，键为 passed, summary, "
+                + ("checks。" if normalize_fn is not None else "issues。"),
                 system=system_prompt,
                 max_tokens=max_tokens,
                 timeout=timeout_seconds,
@@ -414,6 +556,11 @@ def _llm_review_execute(
                 log_lines,
                 debug_entry,
             )
+    if normalize_fn is not None:
+        step, extra_logs = normalize_fn(data, anchor_base)
+        log_lines.extend(extra_logs)
+        if step is not None:
+            return step, usage, log_lines, debug_entry
     return _normalize_llm_step(step_id, data, anchor_base), usage, log_lines, debug_entry
 
 
@@ -478,9 +625,10 @@ def _content_node_worker(
         str,
         int,
         str,
+        str,
     ],
 ) -> tuple[int, ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
-    """单节点：知识库检索 + LLM；不写入主库，日志行返回给主线程按序写入。"""
+    """单节点：缓存查询 + 知识库检索 + LLM 逐项判定；不写入主库，日志行返回给主线程按序写入。"""
     (
         work_idx,
         tn,
@@ -493,6 +641,7 @@ def _content_node_worker(
         step_id,
         len_content_nodes,
         global_rules,
+        template_updated_at,
     ) = payload
     logs: list[LogLine] = []
     node_t0 = perf_counter()
@@ -528,16 +677,51 @@ def _content_node_worker(
                 if ru is not None:
                     ref_chunks.append(collect_subtree_text(ru))
         ref_text = "\n\n---\n\n".join(ref_chunks)
-        kb_text = ""
+
+        # 检查项清单（确定性拆分）+ 结果缓存
+        items, notes = split_check_items(tid, rp, node=tn)
+        if not items and rp:
+            # 拆分结果为空（整段均为判定说明）时兜底：整段 prompt 作为唯一检查项
+            items = [{"id": f"{tid}-1", "text": rp}]
+        checklist_sig = checklist_signature(items, notes, global_rules)
         ds = tn.get("dify_dataset_id")
+        kws = tn.get("knowledge_keywords") or []
+        qparts: list[str] = []
+        if isinstance(kws, list):
+            qparts.extend(str(x).strip() for x in kws if str(x).strip())
+        if not qparts:
+            qparts.append(str(tn.get("title") or "").strip())
+        query = " ".join(qparts)[:250]
+        fingerprint = ""
+        try:
+            provider, model = provider_model_pair(ldb)
+            fingerprint = node_fingerprint(
+                step_id=step_id,
+                provider=provider,
+                model=model,
+                checklist_sig=checklist_sig,
+                template_updated_at=template_updated_at,
+                current_text=current_text,
+                ref_text=ref_text,
+                dataset_id=str(ds or ""),
+                query=query,
+            )
+            cached_step = cache_lookup(ldb, fingerprint)
+            if cached_step is not None:
+                logs.append(
+                    (
+                        "info",
+                        f"content 节点命中结果缓存 id={tid} 检查项={len(items)} "
+                        f"问题={len(cached_step.issues)}（文档与规则未变化，复用上次判定）",
+                    )
+                )
+                return (work_idx, cached_step, EMPTY_USAGE, logs, None)
+        except Exception as e:
+            fingerprint = ""
+            logs.append(("warning", f"content 节点结果缓存查询失败 id={tid}: {e!s}"))
+
+        kb_text = ""
         if ds and dify_url and dify_key:
-            kws = tn.get("knowledge_keywords") or []
-            qparts: list[str] = []
-            if isinstance(kws, list):
-                qparts.extend(str(x).strip() for x in kws if str(x).strip())
-            if not qparts:
-                qparts.append(str(tn.get("title") or "").strip())
-            query = " ".join(qparts)[:250]
             kb_t0 = perf_counter()
             try:
                 kb_text = retrieve_dataset_chunks(dify_url, dify_key, str(ds), query)
@@ -560,6 +744,22 @@ def _content_node_worker(
                         f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
                     )
                 )
+        if len(current_text) > CONTENT_TEXT_CAP:
+            logs.append(
+                (
+                    "warning",
+                    f"content 节点正文超长截断 id={tid} 原文 {len(current_text)} 字符，"
+                    f"截断至 {CONTENT_TEXT_CAP} 字符（截断点之后的内容不参与判定）",
+                )
+            )
+        if len(ref_text) > CONTENT_REF_TEXT_CAP:
+            logs.append(
+                (
+                    "warning",
+                    f"content 节点引用章节正文超长截断 id={tid} 原文 {len(ref_text)} 字符，"
+                    f"截断至 {CONTENT_REF_TEXT_CAP} 字符",
+                )
+            )
         tp = title_path_for_node(template_nodes, tid)
         hpi = un.get("heading_para_index")
         anchor = {
@@ -567,7 +767,13 @@ def _content_node_worker(
             "title_path": tp,
             "heading_para_index": hpi,
         }
-        prompt = _content_prompt(current_text, ref_text, kb_text, rp, global_rules)
+        prompt = _content_prompt(
+            current_text,
+            ref_text,
+            kb_text,
+            build_checklist_block(items, notes),
+            global_rules,
+        )
         llm_t0 = perf_counter()
         try:
             sub, usage, ll_logs, dbg = _llm_review_execute(
@@ -579,6 +785,10 @@ def _content_node_worker(
                 timeout_seconds=float(review_timeout_seconds),
                 timeout_fail_fast=True,
                 max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
+                system=CONTENT_JSON_SYSTEM,
+                normalize_fn=lambda data, a_base: _normalize_content_checks(
+                    step_id, data, a_base, items
+                ),
             )
             logs.extend(ll_logs)
         except TimeoutError as e:
@@ -611,6 +821,17 @@ def _content_node_worker(
                 ),
             )
         )
+        if fingerprint:
+            try:
+                cache_store(
+                    ldb,
+                    fingerprint=fingerprint,
+                    step_id=step_id,
+                    template_node_id=tid,
+                    step=sub,
+                )
+            except Exception as e:
+                logs.append(("warning", f"content 节点结果缓存写入失败 id={tid}: {e!s}"))
         return (work_idx, sub, usage, logs, dbg)
     finally:
         ldb.close()
@@ -893,37 +1114,50 @@ def _content_prompt(
     current_text: str,
     ref_text: str,
     kb_text: str,
-    review_prompt: str,
+    checklist_block: str,
     global_rules: str = "",
 ) -> str:
-    """构造 per-node 内容审核 LLM prompt。
+    """构造 per-node 内容审核 LLM prompt（逐项清单判定版）。
 
-    `global_rules`（模板级「内容审核全局规则」）会作为 per-node 审核提示词的
-    补充追加在【审核提示词】块内、per-node prompt 之后。空字符串时不输出该段。
+    `checklist_block` 为由节点 review_prompt 确定性拆分出的
+    【检查项清单】+【判定附注】文本块（见 services/checklist.py），
+    替代原先整段散文式【审核提示词】。
+    `global_rules`（模板级「内容审核全局规则」）作为补充追加其后。
     """
-    prompt_block = review_prompt
+    cur = current_text[:CONTENT_TEXT_CAP]
+    if len(current_text) > CONTENT_TEXT_CAP:
+        cur += "\n（注意：本节正文超长，已截断，仅以上述内容为准）"
+    ref = ref_text[:CONTENT_REF_TEXT_CAP]
+    if len(ref_text) > CONTENT_REF_TEXT_CAP:
+        ref += "\n（注意：引用章节正文超长，已截断）"
+    kb = kb_text[:CONTENT_KB_TEXT_CAP]
+    prompt_block = checklist_block
     if global_rules and global_rules.strip():
-        # 直接拼到 per-node 审核提示词后面，不加额外区块标题
-        prompt_block = f"{review_prompt}\n\n{global_rules.strip()}"
+        prompt_block = f"{checklist_block}\n\n{global_rules.strip()}"
     return (
         "【当前章节及子节正文】\n"
-        f"{current_text[:16000]}\n\n"
+        f"{cur}\n\n"
         "【引用章节正文】\n"
-        f"{ref_text[:12000] or '(无)'}\n\n"
+        f"{ref or '(无)'}\n\n"
         "【知识库检索片段】\n"
-        f"{kb_text[:12000] or '(无)'}\n\n"
+        f"{kb or '(无)'}\n\n"
         "【审核提示词】\n"
         f"{prompt_block}\n\n"
         "【审核逻辑】\n"
-        "1. 严格依据【审核提示词】提取核查项，不得自行新增无关检查项。\n"
-        "2. 逐项核查【当前章节及子节正文】；若缺失关键信息，明确指出缺失项。\n"
+        "1. 对【审核提示词】中【检查项清单】的每个检查项逐项判定，按 item_id 回填 verdict，"
+        "不得遗漏任何 item_id，也不得新增清单之外的检查项；判定判据遵循【审核总则】"
+        "（量化型/清单型/存在性型的分档标准）与【判定附注】。\n"
+        "2. 逐项核查【当前章节及子节正文】；不符合时 verdict=fail 并在 message 中明确指出缺失项或矛盾点；"
+        "判 pass 时必须在 evidence 中引用正文中证明该内容存在的原文（≤50 字），"
+        "引用不到原文的不得判 pass，按【审核总则】“未给出”处理（verdict=fail）。\n"
         "3. 使用【引用章节正文】与【知识库检索片段】做交叉验证与依据补充。\n"
         "4. 当【引用章节正文】或【知识库检索片段】为“(无)”时：\n"
         "   (a) 不得臆测外部依据，禁止编造规范条文/编号/页码；\n"
-        "   (b) 仍须基于【当前章节及子节正文】给出实质性审核结论，不得因缺交叉依据就放弃核查；\n"
-        "   (c) 仅当某条核查项必须依赖引用章节或知识库才能判断时，才在该 issue 的 evidence / related 中注明“无引用章节/知识库可交叉验证”，并将 severity 设为 info；其它情形仍按 error / warning 出问题。\n"
-        "5. 仅输出 JSON 对象；issues 需同时说明问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
-        "6. 每条 issue 的 related 中必须给出可执行整改建议（suggestions: string[]，可选 suggestion: string）。"
+        "   (b) 仍须基于【当前章节及子节正文】给出实质性判定，不得因缺交叉依据就放弃核查；\n"
+        "   (c) 仅当某检查项必须依赖引用章节或知识库才能判断时，verdict 才填 na；其它情形仍按 pass/fail 判定。\n"
+        "5. 仅输出 JSON 对象；每条 fail 的检查项须同时给出问题、证据来源（当前章节/引用章节/知识库）及参考依据。\n"
+        "6. verdict=fail 的检查项必须在 related 中给出可执行整改建议"
+        "（fix: string，suggestions: string[]）。"
     )
 
 
@@ -1344,11 +1578,39 @@ def run_review_pipeline(task_id: int) -> None:
                     ctx_work.append((cidx, anchor, prompt, ref_path_strings))
                     cidx += 1
 
-                def _ctx_run(payload: tuple[dict[str, Any], str]) -> Any:
-                    anchor_b, pr = payload
+                ctx_updated_at = str(tmpl.updated_at.isoformat() if tmpl.updated_at else "")
+
+                def _ctx_run(payload: tuple[dict[str, Any], str, str]) -> Any:
+                    anchor_b, pr, node_tid = payload
                     ldb = SessionLocal()
+                    ctx_logs: list[LogLine] = []
+                    fingerprint = ""
                     try:
-                        return _llm_review_execute(
+                        try:
+                            provider, model = provider_model_pair(ldb)
+                            fingerprint = prompt_fingerprint(
+                                step_id=step_id,
+                                provider=provider,
+                                model=model,
+                                prompt=pr,
+                                template_updated_at=ctx_updated_at,
+                            )
+                            cached_step = cache_lookup(ldb, fingerprint)
+                            if cached_step is not None:
+                                ctx_logs.append(
+                                    (
+                                        "info",
+                                        f"{step_id} 节点命中结果缓存 id={node_tid}"
+                                        f"（章节与规则未变化，复用上次判定）",
+                                    )
+                                )
+                                return (cached_step, EMPTY_USAGE, ctx_logs, None)
+                        except Exception as e:
+                            fingerprint = ""
+                            ctx_logs.append(
+                                ("warning", f"{step_id} 节点结果缓存查询失败 id={node_tid}: {e!s}")
+                            )
+                        sub, usage, log_lines, dbg = _llm_review_execute(
                             ldb,
                             step_id=step_id,
                             user_prompt=pr,
@@ -1358,12 +1620,27 @@ def run_review_pipeline(task_id: int) -> None:
                             timeout_fail_fast=False,
                             max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                         )
+                        log_lines = ctx_logs + log_lines
+                        if fingerprint:
+                            try:
+                                cache_store(
+                                    ldb,
+                                    fingerprint=fingerprint,
+                                    step_id=step_id,
+                                    template_node_id=node_tid,
+                                    step=sub,
+                                )
+                            except Exception as e:
+                                log_lines.append(
+                                    ("warning", f"{step_id} 节点结果缓存写入失败 id={node_tid}: {e!s}")
+                                )
+                        return (sub, usage, log_lines, dbg)
                     finally:
                         ldb.close()
 
                 ctx_results = _bounded_parallel_map(
                     concurrency=context_consistency_concurrency,
-                    items=[(i, (a, p)) for i, a, p, _rfs in ctx_work],
+                    items=[(i, (a, p, str(a.get("template_node_id") or ""))) for i, a, p, _rfs in ctx_work],
                     worker=_ctx_run,
                 )
                 ctx_results.sort(key=lambda x: x[0])
@@ -1430,6 +1707,7 @@ def run_review_pipeline(task_id: int) -> None:
                             step_id,
                             len(content_nodes),
                             content_global_rules,
+                            str(tmpl.updated_at.isoformat() if tmpl.updated_at else ""),
                         ),
                     )
                     for i, tn in enumerate(content_nodes)
@@ -1564,6 +1842,110 @@ def run_review_pipeline(task_id: int) -> None:
                     report.steps.append(sub)
                     db.commit()
 
+        # 图审核（独立步骤，不进工作流）：模板有节点配置且模型就绪时执行
+        image_nodes = [
+            (tn, parse_node_image_config(tn))
+            for tn in iter_nodes(template_nodes)
+            if parse_node_image_config(tn) is not None
+        ]
+        if image_nodes:
+            task.review_stage = IMAGE_STEP_ID
+            _append_log(db, task, "info", f"开始步骤: {IMAGE_STEP_ID}（配置节点 {len(image_nodes)} 个）")
+            db.commit()
+            img_cfg = effective_image_review(db)
+            if not img_cfg.ready:
+                _append_log(
+                    db, task, "warning",
+                    "图审核已配置节点但模型未就绪（未启用或 MiniMax 凭据/图审核模型缺失），已跳过",
+                )
+                report.steps.append(
+                    ReportStep(
+                        step_id=IMAGE_STEP_ID,
+                        passed=True,
+                        summary="图审核模型未配置或未启用，已跳过",
+                        issues=[],
+                    )
+                )
+            else:
+                img_global_rules = (tmpl.image_review_rules or "").strip()
+                img_updated_at = str(tmpl.updated_at.isoformat() if tmpl.updated_at else "")
+                img_concurrency = max(1, min(get_content_concurrency(db), 4))
+                img_work: list[tuple[int, tuple[dict, Any, Any, str, str, list[str]]]] = []
+                for i, (tn, node_img_cfg) in enumerate(image_nodes):
+                    tid = str(tn.get("id") or "")
+                    un = resolve_user_node(mapping, tid)
+                    if un is None:
+                        continue
+                    tp_list = title_path_for_node(template_nodes, tid)
+                    img_work.append(
+                        (
+                            i,
+                            (
+                                tn,
+                                un,
+                                node_img_cfg,
+                                tid,
+                                title_path_str(tp_list),
+                                tp_list,
+                            ),
+                        )
+                    )
+
+                def _img_node_worker(payload: tuple[dict, Any, Any, str, str, list[str]]) -> Any:
+                    tn, un, node_img_cfg, tid, tp_str, tp_list = payload
+                    ldb = SessionLocal()
+                    try:
+                        _r = review_node_images(
+                            ldb=ldb,
+                            cfg=img_cfg,
+                            template_node_id=tid,
+                            node_title_path=tp_str,
+                            config=node_img_cfg,
+                            user_node=un,
+                            global_rules=img_global_rules,
+                            template_updated_at=img_updated_at,
+                            debug_prompts=debug_prompts if prompt_debug_enabled else None,
+                            title_path=tp_list,
+                        )
+                        return (tid, _r)
+                    finally:
+                        ldb.close()
+
+                img_results = _bounded_parallel_map(
+                    concurrency=img_concurrency,
+                    items=img_work,
+                    worker=_img_node_worker,
+                )
+                img_step = ReportStep(step_id=IMAGE_STEP_ID, passed=True, summary="", issues=[])
+                node_summaries: list[str] = []
+                for _, (tid, _r) in img_results:
+                    for level, msg in _r.logs:
+                        _append_log(db, task, level, msg)
+                    img_step.issues.extend(_r.issues)
+                    img_step.image_items.extend(_r.image_items)
+                    if not _r.passed:
+                        img_step.passed = False
+                    if _r.summary:
+                        node_summaries.append(f"{tid}: {_r.summary}")
+                    db.commit()
+                img_step.summary = (
+                    "；".join(node_summaries)
+                    if node_summaries
+                    else ("图审核通过" if img_step.passed else f"发现 {len(img_step.issues)} 条图审核问题")
+                )
+                fd_idx = next(
+                    (
+                        i
+                        for i, s in enumerate(report.steps)
+                        if s.step_id == "full_document"
+                    ),
+                    len(report.steps),
+                )
+                report.steps.insert(fd_idx, img_step)
+                _append_log(db, task, "info", f"图审核步骤完成: {img_step.summary}")
+            task.review_stage = None
+            db.commit()
+
         task.review_stage = None
         _append_log(db, task, "info", "审核步骤结束，开始生成审核报告")
         db.commit()
@@ -1580,7 +1962,9 @@ def run_review_pipeline(task_id: int) -> None:
                 hpi = (iss.anchor or {}).get("heading_para_index")
                 if isinstance(hpi, int):
                     step_label = WORD_COMMENT_STEP_LABEL_CN.get(st.step_id, st.step_id)
-                    txt = f"({step_label}) {iss.message}"
+                    check_item = str((iss.related or {}).get("check_item_id") or "").strip()
+                    item_prefix = f"【检查项 {check_item}】" if check_item else ""
+                    txt = f"({step_label}) {item_prefix}{iss.message}"
                     if iss.evidence:
                         txt += f"\n{iss.evidence[:800]}"
                     annotations.append((hpi, txt[:2000]))

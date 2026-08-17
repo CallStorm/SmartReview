@@ -29,11 +29,23 @@ class DeepseekPublic(BaseModel):
     api_key_configured: bool
 
 
+class ImageReviewPublic(BaseModel):
+    """图审核（视觉模型）配置：复用 MiniMax 凭据，单独的模型名与护栏。"""
+
+    enabled: bool
+    model: str
+    base_url: str
+    api_key_configured: bool
+    max_side: int
+    max_per_node: int
+
+
 class ModelProviderPublic(BaseModel):
     default_provider: ProviderId | None
     volcengine: VolcenginePublic
     minimax: MinimaxPublic
     deepseek: DeepseekPublic
+    image_review: ImageReviewPublic
 
 
 class ModelProviderUpdate(BaseModel):
@@ -53,6 +65,11 @@ class ModelProviderUpdate(BaseModel):
     deepseek_api_key: str | None = Field(default=None, description="新密钥；不传或空表示不修改")
     deepseek_model: str | None = None
 
+    image_review_enabled: bool | None = None
+    image_review_model: str | None = None
+    image_review_max_side: int | None = Field(default=None, ge=256, le=8192)
+    image_review_max_per_node: int | None = Field(default=None, ge=1, le=100)
+
     @field_validator(
         "volcengine_base_url",
         "volcengine_endpoint_id",
@@ -60,6 +77,7 @@ class ModelProviderUpdate(BaseModel):
         "minimax_model",
         "deepseek_base_url",
         "deepseek_model",
+        "image_review_model",
         mode="before",
     )
     @classmethod

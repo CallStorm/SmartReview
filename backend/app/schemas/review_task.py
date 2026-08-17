@@ -49,6 +49,11 @@ class DebugPromptPublic(BaseModel):
     prompt_text: str
     prompt_length: int
     created_at: str
+    # 图审核专用：图片地址/图说明/模型判定结果，供前端调试表格展示
+    image_object_key: str = ""
+    image_caption: str = ""
+    model_passed: bool | None = None
+    model_summary: str = ""
 
 
 class ReviewTaskCreateResponse(BaseModel):

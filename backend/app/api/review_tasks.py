@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, defer, joinedload
 
 from app.config import get_settings
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin
 from app.models.scheme_review_task import ReviewTaskStatus, SchemeReviewTask
 from app.models.scheme_template import SchemeTemplate
 from app.models.scheme_type import SchemeType
@@ -29,6 +29,8 @@ from app.services.onlyoffice import (
 )
 from app.services.review_report_docx import build_audit_report_docx
 from app.services.review_report_pdf import build_audit_report_pdf
+from app.services.review_adversarial import generate_prompt_suggestions, run_adversarial_audit
+from app.services.review_selfcheck import run_selfcheck
 from app.services.review_settings import DEFAULT_SYSTEM_NAME, get_or_create_review_settings
 from app.services.upload_settings import get_max_upload_mb
 
@@ -76,6 +78,7 @@ def _task_public(
                 for it in raw_prompts:
                     if not isinstance(it, dict):
                         continue
+                    mp = it.get("model_passed")
                     rows.append(
                         DebugPromptPublic(
                             step_id=str(it.get("step_id") or ""),
@@ -84,6 +87,10 @@ def _task_public(
                             prompt_text=str(it.get("prompt_text") or ""),
                             prompt_length=int(it.get("prompt_length") or 0),
                             created_at=str(it.get("created_at") or ""),
+                            image_object_key=str(it.get("image_object_key") or ""),
+                            image_caption=str(it.get("image_caption") or ""),
+                            model_passed=(mp if isinstance(mp, bool) else None),
+                            model_summary=str(it.get("model_summary") or ""),
                         )
                     )
                 debug_prompts = rows or None
@@ -152,6 +159,24 @@ def list_my_tasks(
     ]
 
 
+@router.get("/image-url", response_model=DownloadUrlResponse)
+def get_review_image_url(
+    object_key: str = Query(..., min_length=1, max_length=1024),
+    expires_seconds: int = Query(1800, ge=60, le=86400),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> DownloadUrlResponse:
+    """图审核 issue 缩略图：对文档抽取图片对象签发临时访问链接。"""
+    # 仅允许访问文档图片命名空间，key 含 UUID 不可枚举
+    if "/images/" not in object_key or ".." in object_key or object_key.startswith("/"):
+        raise HTTPException(status_code=400, detail="非法图片对象键")
+    try:
+        url = minio_storage.presigned_get_url(object_key, expires_seconds=expires_seconds)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"无法生成图片链接: {e!s}") from e
+    return DownloadUrlResponse(url=url, expires_seconds=expires_seconds)
+
+
 @router.get("/{task_id}", response_model=ReviewTaskPublic)
 def get_task(
     task_id: int,
@@ -191,6 +216,119 @@ def delete_task(
         minio_storage.remove_object_if_exists(t.output_object_key.strip())
     db.delete(t)
     db.commit()
+
+
+@router.get("/{task_id}/self-check")
+def self_check_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> dict:
+    """AI 测评（确定性体检层）：程序化核验一次审核的质量，不调 LLM。"""
+    t = db.get(SchemeReviewTask, task_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if t.status == ReviewTaskStatus.pending or t.status == ReviewTaskStatus.processing:
+        raise HTTPException(status_code=409, detail="任务尚未完成，暂无法测评")
+    if not t.review_result_json:
+        raise HTTPException(status_code=404, detail="暂无审核结果数据")
+    return run_selfcheck(db, t)
+
+
+@router.post("/{task_id}/ai-audit")
+def start_ai_audit(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> dict:
+    """AI 测评（对抗层）：LLM 独立复核 pass/fail 判定，生成分歧记录。"""
+    t = db.get(SchemeReviewTask, task_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if t.status == ReviewTaskStatus.pending or t.status == ReviewTaskStatus.processing:
+        raise HTTPException(status_code=409, detail="任务尚未完成，暂无法测评")
+    if not t.review_result_json:
+        raise HTTPException(status_code=404, detail="暂无审核结果数据")
+    try:
+        return run_adversarial_audit(db, t)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"测评执行失败: {e!s}") from e
+
+
+@router.get("/{task_id}/ai-audit/findings")
+def list_ai_audit_findings(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> dict:
+    """列出该任务的测评分歧记录（对抗层）。"""
+    from app.models.review_audit_finding import ReviewAuditFinding
+
+    rows = (
+        db.query(ReviewAuditFinding)
+        .filter(ReviewAuditFinding.task_id == task_id)
+        .order_by(ReviewAuditFinding.id.desc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "node_id": r.node_id,
+                "node_title": r.node_title,
+                "check_item_id": r.check_item_id,
+                "check_item_text": r.check_item_text,
+                "finding_type": r.finding_type,
+                "description": r.description,
+                "status": r.status,
+                "adjudicated_by": r.adjudicated_by,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.patch("/audit-findings/{finding_id}")
+def adjudicate_ai_audit_finding(
+    finding_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> dict:
+    """管理员裁决分歧：status 取 confirmed / rejected / unclear。"""
+    from datetime import UTC, datetime as _dt
+
+    from app.models.review_audit_finding import ReviewAuditFinding
+
+    status_val = str((body or {}).get("status") or "").strip()
+    if status_val not in ("confirmed", "rejected", "unclear"):
+        raise HTTPException(status_code=400, detail="status 须为 confirmed/rejected/unclear")
+    r = db.get(ReviewAuditFinding, finding_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="分歧记录不存在")
+    r.status = status_val
+    r.adjudicated_by = user.username
+    r.adjudicated_at = _dt.now(UTC)
+    db.commit()
+    return {"id": r.id, "status": r.status}
+
+
+@router.post("/{task_id}/ai-audit/suggestions")
+def build_ai_audit_suggestions(
+    task_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> dict:
+    """把已确认的分歧转成提示词优化建议（LLM 生成，供管理员参考）。"""
+    t = db.get(SchemeReviewTask, task_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    try:
+        return generate_prompt_suggestions(db, t)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"建议生成失败: {e!s}") from e
 
 
 @router.get("/{task_id}/audit-report")

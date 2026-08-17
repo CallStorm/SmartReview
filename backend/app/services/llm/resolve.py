@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.models.model_provider_settings import ModelProviderSettings
-from app.schemas.model_provider import DeepseekPublic, ModelProviderPublic, MinimaxPublic, VolcenginePublic
+from app.schemas.model_provider import (
+    DeepseekPublic,
+    ImageReviewPublic,
+    MinimaxPublic,
+    ModelProviderPublic,
+    VolcenginePublic,
+)
 from app.services.llm.registry import ProviderId
 
 
@@ -61,6 +67,43 @@ def effective_default_provider(db: Session, settings: Settings | None = None) ->
     return None
 
 
+@dataclass
+class ImageReviewConfig:
+    """图审核（视觉模型）生效配置：复用 MiniMax 凭据 + 独立模型与护栏。
+
+    ready=False 表示未启用或凭据不全，图审核步骤整体跳过。
+    """
+
+    enabled: bool
+    base_url: str
+    api_key: str
+    model: str
+    max_side: int
+    max_per_node: int
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.enabled and self.base_url and self.api_key and self.model)
+
+
+def effective_image_review(db: Session, settings: Settings | None = None) -> ImageReviewConfig:
+    settings = settings or get_settings()
+    row = _get_row(db)
+    m_url, m_key, _m_model = effective_minimax(db, settings)
+    enabled = bool(row and row.image_review_enabled)
+    model = (row.image_review_model if row else "") or ""
+    max_side = int(row.image_review_max_side if row else 0) or 1536
+    max_per_node = int(row.image_review_max_per_node if row else 0) or 10
+    return ImageReviewConfig(
+        enabled=enabled,
+        base_url=m_url,
+        api_key=m_key,
+        model=model.strip(),
+        max_side=max(256, min(max_side, 8192)),
+        max_per_node=max(1, min(max_per_node, 100)),
+    )
+
+
 def build_model_provider_public(db: Session) -> ModelProviderPublic:
     settings = get_settings()
     row = _get_row(db)
@@ -84,6 +127,16 @@ def build_model_provider_public(db: Session) -> ModelProviderPublic:
             base_url=d_url,
             model=d_model,
             api_key_configured=bool(d_key),
+        ),
+        image_review=ImageReviewPublic(
+            enabled=bool(row and row.image_review_enabled),
+            model=(row.image_review_model if row else "") or "",
+            base_url=m_url,
+            api_key_configured=bool(m_key),
+            max_side=int(row.image_review_max_side) if row and row.image_review_max_side else 1536,
+            max_per_node=(
+                int(row.image_review_max_per_node) if row and row.image_review_max_per_node else 10
+            ),
         ),
     )
 

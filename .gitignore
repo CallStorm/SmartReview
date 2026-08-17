@@ -11,3 +11,8 @@ dist/
 .idea/
 .vscode/
 *.log
+
+# 备份与调试产物（含数据库导出、token 等敏感信息，禁止入库）
+backups/
+_debug_sr/
+.opencode/

@@ -11,6 +11,7 @@ import {
   Card,
   Collapse,
   Empty,
+  Image,
   List,
   Space,
   Spin,
@@ -19,10 +20,18 @@ import {
   Typography,
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ReportIssue, ReportStep, ReviewReportV1, ReviewSettings, ReviewTask } from '../api/types'
+import type {
+  DebugPromptItem,
+  ImageReviewItem,
+  ReportIssue,
+  ReportStep,
+  ReviewReportV1,
+  ReviewSettings,
+  ReviewTask,
+} from '../api/types'
 import StructureReviewDetail from '../components/StructureReviewDetail'
 import { buildReviewExportFilename } from '../utils/reviewExportFilename'
 
@@ -32,6 +41,146 @@ const STEP_LABELS: Record<string, string> = {
   context_consistency: '上下文一致性',
   content: '内容审核',
   full_document: '通篇审核',
+  image_review: '图审核',
+}
+
+/** 图审核 issue 缩略图：按 object_key 现取临时链接展示 */
+function IssueImageThumb({ objectKey }: { objectKey: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    api
+      .get<{ url: string }>('/review-tasks/image-url', { params: { object_key: objectKey } })
+      .then(({ data }) => {
+        if (!cancelled) setUrl(data.url)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [objectKey])
+  if (failed) return <Typography.Text type="secondary">图片加载失败</Typography.Text>
+  if (!url) return <Spin size="small" />
+  return (
+    <Image
+      src={url}
+      width={120}
+      style={{ borderRadius: 4, objectFit: 'contain' }}
+      alt={objectKey}
+    />
+  )
+}
+
+/** 审图类别中文标签（兼容旧数据无 review_category 时按 summary 推断） */
+const REVIEW_CATEGORY_LABELS: Record<string, string> = {
+  existence: '存在性',
+  kind: '图种识别',
+  content: '内容要素',
+  'kind+content': '图种+内容要素',
+  vision: '视觉判定',
+}
+
+function reviewCategoryOf(it: ImageReviewItem): string {
+  if (it.review_category) {
+    return REVIEW_CATEGORY_LABELS[it.review_category] ?? it.review_category
+  }
+  // 旧数据兜底：summary 含“存在性”关键字视为存在性类别
+  return it.summary?.includes('存在性') ? '存在性' : '视觉判定'
+}
+
+/** 图审核步骤通过列表（图维度），行展开可见该图完整提示词；问题列表由通用渲染承担 */
+function ImageReviewDetail({
+  step,
+  debugPrompts,
+}: {
+  step: ReportStep
+  debugPrompts: DebugPromptItem[]
+}) {
+  const items: ImageReviewItem[] = step.image_items ?? []
+  const passed = items.filter((it) => it.passed)
+  const promptOf = (key: string) =>
+    debugPrompts.find((p) => p.image_object_key === key)?.prompt_text
+
+  return (
+    <>
+      <Typography.Title level={5}>通过列表</Typography.Title>
+      {passed.length === 0 ? (
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          本步骤无通过的附图
+        </Typography.Text>
+      ) : (
+        <Table<ImageReviewItem>
+          size="small"
+          style={{ marginBottom: 16 }}
+          rowKey={(r) => r.image_object_key}
+          pagination={false}
+          dataSource={passed}
+          expandable={{
+            expandedRowRender: (r) => {
+              const p = promptOf(r.image_object_key)
+              return p ? (
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    fontSize: 12,
+                    background: 'var(--ant-color-fill-quaternary)',
+                    padding: 8,
+                    borderRadius: 6,
+                  }}
+                >
+                  {p}
+                </pre>
+              ) : (
+                <Typography.Text type="secondary">
+                  该任务未采集完整提示词（调试开关未开启、任务在开启前执行或命中缓存）
+                </Typography.Text>
+              )
+            },
+          }}
+          columns={[
+            {
+              title: '审图类别',
+              dataIndex: 'review_category',
+              width: 110,
+              render: (_, r: ImageReviewItem) => (
+                <Tag color="blue">{reviewCategoryOf(r)}</Tag>
+              ),
+            },
+            {
+              title: '审核图',
+              dataIndex: 'image_object_key',
+              width: 200,
+              render: (key?: string) =>
+                key ? (
+                  <Space direction="vertical" size={4}>
+                    <IssueImageThumb objectKey={key} />
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }} copyable={{ text: key }}>
+                      {key.split('/').pop()}
+                    </Typography.Text>
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">-</Typography.Text>
+                ),
+            },
+            {
+              title: '章节位置',
+              dataIndex: 'title_path',
+              render: (v?: string[]) => (v && v.length ? v.join(' > ') : '-'),
+            },
+            {
+              title: '识别出的图内容',
+              dataIndex: 'summary',
+              render: (v: string) => v || '-',
+            },
+          ]}
+        />
+      )}
+    </>
+  )
 }
 
 const SEVERITY_META: Record<string, { label: string; color: string }> = {
@@ -486,7 +635,9 @@ export default function ManualReviewPage() {
                 </Tag>
                 <Typography.Text type="secondary">{activeStep.summary}</Typography.Text>
               </Space>
-              {reviewSettings?.prompt_debug_enabled ? (
+              {activeStep.step_id === 'image_review' ? (
+                <ImageReviewDetail step={activeStep} debugPrompts={activeDebugPrompts} />
+              ) : reviewSettings?.prompt_debug_enabled ? (
                 <>
                   <Typography.Title level={5}>拼接提示词（调试）</Typography.Title>
                   {activeDebugPrompts.length === 0 ? (
@@ -737,7 +888,9 @@ export default function ManualReviewPage() {
                     ]}
                   />
                 </>
-              ) : activeStep.step_id === 'content' || activeStep.step_id === 'full_document' ? (
+              ) : activeStep.step_id === 'content' ||
+                activeStep.step_id === 'full_document' ||
+                activeStep.step_id === 'image_review' ? (
                 <>
                   <style>
                     {`
@@ -795,6 +948,32 @@ export default function ManualReviewPage() {
                           )
                         },
                       },
+                      ...(activeStep.step_id === 'image_review'
+                        ? [
+                            {
+                              title: '图件',
+                              width: 160,
+                              onHeaderCell: () => ({ style: MODERN_TABLE_HEADER_STYLE }),
+                              onCell: () => ({ style: MODERN_TABLE_CELL_STYLE }),
+                              render: (_: unknown, it: ReportIssue) => {
+                                const key = String(it.related?.image_object_key || '')
+                                const caption = String(it.related?.image_caption || '')
+                                return key ? (
+                                  <Space direction="vertical" size={4}>
+                                    <IssueImageThumb objectKey={key} />
+                                    {caption ? (
+                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                        {caption}
+                                      </Typography.Text>
+                                    ) : null}
+                                  </Space>
+                                ) : (
+                                  <Typography.Text type="secondary">-</Typography.Text>
+                                )
+                              },
+                            },
+                          ]
+                        : []),
                       {
                         title: '问题',
                         dataIndex: 'message',

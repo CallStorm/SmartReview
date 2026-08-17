@@ -24,6 +24,8 @@ class ReportStep(BaseModel):
     summary: str = ""
     issues: list[ReportIssue] = Field(default_factory=list)
     mappings: list[dict[str, Any]] = Field(default_factory=list)
+    # 图审核逐图结果：{image_object_key, image_caption, passed, summary, issues:[...]}
+    image_items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReviewReportV1(BaseModel):

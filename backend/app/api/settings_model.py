@@ -73,6 +73,15 @@ def update_model_providers(
     if "deepseek_model" in patch and patch["deepseek_model"] is not None:
         row.deepseek_model = patch["deepseek_model"].strip()
 
+    if "image_review_enabled" in patch and patch["image_review_enabled"] is not None:
+        row.image_review_enabled = bool(patch["image_review_enabled"])
+    if "image_review_model" in patch and patch["image_review_model"] is not None:
+        row.image_review_model = patch["image_review_model"].strip()
+    if "image_review_max_side" in patch and patch["image_review_max_side"] is not None:
+        row.image_review_max_side = int(patch["image_review_max_side"])
+    if "image_review_max_per_node" in patch and patch["image_review_max_per_node"] is not None:
+        row.image_review_max_per_node = int(patch["image_review_max_per_node"])
+
     db.commit()
     db.refresh(row)
     return build_model_provider_public(db)

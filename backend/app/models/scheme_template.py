@@ -30,6 +30,8 @@ class SchemeTemplate(Base):
     review_workflow: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_document_review_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_review_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 模板级「图审核全局规则」：注入到每个图审核节点的视觉模型 prompt
+    image_review_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     structure_match_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="exact", default="exact"
     )
