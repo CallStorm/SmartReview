@@ -1848,13 +1848,13 @@ def run_review_pipeline(task_id: int) -> None:
                     report.steps.append(sub)
                     db.commit()
 
-        # 图审核（独立步骤，不进工作流）：模板有节点配置且模型就绪时执行
+        # 图审核（可选工作流步骤）：仅当审核工作流开启 image_review 时执行
         image_nodes = [
             (tn, parse_node_image_config(tn))
             for tn in iter_nodes(template_nodes)
             if parse_node_image_config(tn) is not None
         ]
-        if image_nodes:
+        if "image_review" in active and image_nodes:
             task.review_stage = IMAGE_STEP_ID
             _append_log(db, task, "info", f"开始步骤: {IMAGE_STEP_ID}（配置节点 {len(image_nodes)} 个）")
             db.commit()
@@ -1952,6 +1952,9 @@ def run_review_pipeline(task_id: int) -> None:
                 report.steps.insert(fd_idx, img_step)
                 _append_log(db, task, "info", f"图审核步骤完成: {img_step.summary}")
             task.review_stage = None
+            db.commit()
+        elif "image_review" in active:
+            _append_log(db, task, "info", "图审核已开启但模版无图审核配置节点，已跳过")
             db.commit()
 
         task.review_stage = None

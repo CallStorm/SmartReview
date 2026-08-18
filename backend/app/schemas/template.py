@@ -18,6 +18,7 @@ class ReviewWorkflowData(BaseModel):
             "compilation_basis",
             "context_consistency",
             "content",
+            "image_review",
             "full_document",
             "end",
         }
@@ -25,6 +26,7 @@ class ReviewWorkflowData(BaseModel):
             "compilation_basis",
             "context_consistency",
             "content",
+            "image_review",
             "full_document",
         }
         if steps[0] != "start":
@@ -39,14 +41,20 @@ class ReviewWorkflowData(BaseModel):
             raise ValueError("步骤不可重复")
         middle = steps[2:-1]
         if any(m not in optional_mid for m in middle):
-            raise ValueError("中间仅可为编制依据、上下文一致性、内容审核或通篇审核")
+            raise ValueError("中间仅可为编制依据、上下文一致性、内容审核、图审核或通篇审核")
         if len(middle) != len(set(middle)):
             raise ValueError("步骤不可重复")
         if "compilation_basis" in middle and middle[0] != "compilation_basis":
             raise ValueError("编制依据须紧随结构审核之后")
         if "full_document" in middle and middle[-1] != "full_document":
             raise ValueError("通篇审核须为中间步骤的最后一步")
-        core = [m for m in middle if m not in ("compilation_basis", "full_document")]
+        if (
+            "image_review" in middle
+            and "full_document" in middle
+            and middle.index("image_review") + 1 != middle.index("full_document")
+        ):
+            raise ValueError("图审核须紧随通篇审核之前")
+        core = [m for m in middle if m not in ("compilation_basis", "full_document", "image_review")]
         if len(core) == 2 and set(core) != {"context_consistency", "content"}:
             raise ValueError("中间步骤顺序无效")
         if len(core) == 1 and core[0] not in ("context_consistency", "content"):

@@ -15,6 +15,7 @@ const LABELS: Record<WorkflowStepId, string> = {
   compilation_basis: '编制依据',
   context_consistency: '上下文一致性',
   content: '内容审核',
+  image_review: '图审核',
   full_document: '通篇审核',
   end: '结束',
 }
@@ -25,6 +26,7 @@ const SLOT_ORDER: WorkflowStepId[] = [
   'compilation_basis',
   'context_consistency',
   'content',
+  'image_review',
   'full_document',
   'end',
 ]
@@ -34,6 +36,7 @@ function compileSteps(
   includeContext: boolean,
   includeContent: boolean,
   contentBeforeContext: boolean,
+  includeImageReview: boolean,
   includeFullDocument: boolean,
 ): WorkflowStepId[] {
   const mid: WorkflowStepId[] = []
@@ -43,6 +46,7 @@ function compileSteps(
     else mid.push('context_consistency', 'content')
   } else if (includeContext) mid.push('context_consistency')
   else if (includeContent) mid.push('content')
+  if (includeImageReview) mid.push('image_review')
   if (includeFullDocument) mid.push('full_document')
   return ['start', 'structure', ...mid, 'end']
 }
@@ -55,6 +59,7 @@ function isValidServerSteps(raw: unknown): raw is WorkflowStepId[] {
     'compilation_basis',
     'context_consistency',
     'content',
+    'image_review',
     'full_document',
     'end',
   ])
@@ -66,12 +71,21 @@ function isValidServerSteps(raw: unknown): raw is WorkflowStepId[] {
     'compilation_basis',
     'context_consistency',
     'content',
+    'image_review',
     'full_document',
   ])
   if (mid.some((m) => !optMid.has(m))) return false
   if (mid.includes('compilation_basis') && mid[0] !== 'compilation_basis') return false
   if (mid.includes('full_document') && mid[mid.length - 1] !== 'full_document') return false
-  const core = mid.filter((m) => m !== 'compilation_basis' && m !== 'full_document')
+  if (
+    mid.includes('image_review') &&
+    mid.includes('full_document') &&
+    mid.indexOf('image_review') + 1 !== mid.indexOf('full_document')
+  )
+    return false
+  const core = mid.filter(
+    (m) => m !== 'compilation_basis' && m !== 'full_document' && m !== 'image_review',
+  )
   if (core.length === 2) {
     const s = new Set(core)
     if (s.size !== 2 || !s.has('context_consistency') || !s.has('content')) return false
@@ -88,11 +102,13 @@ function parseSteps(steps: WorkflowStepId[]): {
   includeContext: boolean
   includeContent: boolean
   contentBeforeContext: boolean
+  includeImageReview: boolean
   includeFullDocument: boolean
 } {
   const includeBasis = steps.includes('compilation_basis')
   const includeContext = steps.includes('context_consistency')
   const includeContent = steps.includes('content')
+  const includeImageReview = steps.includes('image_review')
   const includeFullDocument = steps.includes('full_document')
   let contentBeforeContext = false
   if (includeContext && includeContent) {
@@ -103,16 +119,17 @@ function parseSteps(steps: WorkflowStepId[]): {
     includeContext,
     includeContent,
     contentBeforeContext,
+    includeImageReview,
     includeFullDocument,
   }
 }
 
-const ROW_CENTERS = [36, 100, 164, 228, 292, 356, 420]
+const ROW_CENTERS = [36, 100, 164, 228, 292, 356, 420, 484]
 const CANVAS_W = 440
 const CX = CANVAS_W / 2
 const CARD_H = 48
 const HALF = CARD_H / 2
-const CANVAS_H = 468
+const CANVAS_H = 532
 
 type Props = {
   open: boolean
@@ -192,6 +209,7 @@ function WorkflowCanvas({ steps }: { steps: WorkflowStepId[] }) {
           id === 'compilation_basis' ||
           id === 'context_consistency' ||
           id === 'content' ||
+          id === 'image_review' ||
           id === 'full_document'
         const dim = optional && !inPath
         const top = ROW_CENTERS[idx] - HALF
@@ -239,6 +257,7 @@ export default function ReviewWorkflowModal({
   const [includeContext, setIncludeContext] = useState(false)
   const [includeContent, setIncludeContent] = useState(false)
   const [contentBeforeContext, setContentBeforeContext] = useState(false)
+  const [includeImageReview, setIncludeImageReview] = useState(false)
   const [includeFullDocument, setIncludeFullDocument] = useState(false)
   const [matchMode, setMatchMode] = useState<StructureMatchMode>('exact')
   const [modeSaving, setModeSaving] = useState(false)
@@ -253,12 +272,14 @@ export default function ReviewWorkflowModal({
       setIncludeContext(p.includeContext)
       setIncludeContent(p.includeContent)
       setContentBeforeContext(p.contentBeforeContext)
+      setIncludeImageReview(p.includeImageReview)
       setIncludeFullDocument(p.includeFullDocument)
     } else {
       setIncludeBasis(false)
       setIncludeContext(false)
       setIncludeContent(false)
       setContentBeforeContext(false)
+      setIncludeImageReview(false)
       setIncludeFullDocument(false)
     }
     setMatchMode(template.structure_match_mode === 'fuzzy' ? 'fuzzy' : 'exact')
@@ -271,9 +292,17 @@ export default function ReviewWorkflowModal({
         includeContext,
         includeContent,
         contentBeforeContext,
+        includeImageReview,
         includeFullDocument,
       ),
-    [includeBasis, includeContext, includeContent, contentBeforeContext, includeFullDocument],
+    [
+      includeBasis,
+      includeContext,
+      includeContent,
+      contentBeforeContext,
+      includeImageReview,
+      includeFullDocument,
+    ],
   )
 
   async function handleSaveMatchMode(next: StructureMatchMode) {
@@ -384,6 +413,15 @@ export default function ReviewWorkflowModal({
                   </Button>
                 </div>
               ) : null}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <Typography.Text>{LABELS.image_review}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                    仅当开启且模板节点配置了图审核时执行
+                  </Typography.Text>
+                </div>
+                <Switch checked={includeImageReview} onChange={setIncludeImageReview} />
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography.Text>{LABELS.full_document}</Typography.Text>
                 <Switch checked={includeFullDocument} onChange={setIncludeFullDocument} />

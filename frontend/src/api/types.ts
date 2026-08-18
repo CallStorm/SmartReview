@@ -92,6 +92,7 @@ export type WorkflowStepId =
   | 'compilation_basis'
   | 'context_consistency'
   | 'content'
+  | 'image_review'
   | 'full_document'
   | 'end'
 
