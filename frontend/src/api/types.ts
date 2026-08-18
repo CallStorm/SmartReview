@@ -184,6 +184,8 @@ export interface TemplatePublic {
   full_document_review_config?: FullDocumentReviewConfig | null
   content_review_rules?: string | null
   image_review_rules?: string | null
+  /** 模板级「缺图提示文案」：节点配置了图审核但未检出附图时，在问题列表展示的说明文字 */
+  image_review_missing_text?: string | null
   structure_match_mode: StructureMatchMode
   parsed_at: string | null
   updated_at: string | null

@@ -17,6 +17,7 @@ from app.schemas.template import (
     ContentReviewRulesUpdate,
     DownloadUrlResponse,
     FullDocumentReviewConfigUpdate,
+    ImageReviewMissingTextUpdate,
     ImageReviewRulesUpdate,
     OptimizePromptRequest,
     OptimizePromptResponse,
@@ -100,6 +101,7 @@ def _template_public(t: SchemeTemplate) -> TemplatePublic:
         full_document_review_config=full_doc,
         content_review_rules=t.content_review_rules,
         image_review_rules=t.image_review_rules,
+        image_review_missing_text=t.image_review_missing_text,
         structure_match_mode=t.structure_match_mode or "exact",
         parsed_at=t.parsed_at,
         updated_at=t.updated_at,
@@ -367,6 +369,40 @@ def update_template_image_review_rules(
     return _template_public(t)
 
 
+@router.put(
+    "/scheme-types/{scheme_id}/template/image-review-missing-text",
+    response_model=TemplatePublic,
+)
+def update_template_image_review_missing_text(
+    scheme_id: int,
+    body: ImageReviewMissingTextUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> TemplatePublic:
+    """模板级「缺图提示文案」：节点配置了图审核但未检出附图时，在问题列表展示的说明文字。"""
+    scheme = db.get(SchemeType, scheme_id)
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="方案类型不存在")
+    t = db.query(SchemeTemplate).filter(SchemeTemplate.scheme_type_id == scheme_id).first()
+    if t is None:
+        raise HTTPException(status_code=404, detail="尚未上传模版")
+    old_text = t.image_review_missing_text or ""
+    value = (body.image_review_missing_text or "").strip()
+    t.image_review_missing_text = value or None
+    record_field_change(
+        db,
+        template=t,
+        field="image_review_missing_text",
+        old_value=old_text,
+        new_value=value,
+        changed_by=user.username,
+        node_title="图审核缺图提示文案",
+    )
+    db.commit()
+    db.refresh(t)
+    return _template_public(t)
+
+
 @router.get("/scheme-types/{scheme_id}/template/download-url", response_model=DownloadUrlResponse)
 def get_template_download_url(
     scheme_id: int,
@@ -486,6 +522,19 @@ def restore_prompt_history_entry(
             new_value=entry.old_value or "",
             changed_by=user.username,
             node_title="图审核全局规则",
+            source="restore",
+        )
+    elif entry.field == "image_review_missing_text":
+        current = t.image_review_missing_text or ""
+        t.image_review_missing_text = entry.old_value or None
+        record_field_change(
+            db,
+            template=t,
+            field="image_review_missing_text",
+            old_value=current,
+            new_value=entry.old_value or "",
+            changed_by=user.username,
+            node_title="图审核缺图提示文案",
             source="restore",
         )
     elif entry.field == "full_document_review_prompt":

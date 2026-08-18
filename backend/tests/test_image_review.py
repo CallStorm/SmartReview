@@ -172,6 +172,68 @@ def test_existence_check_with_image_passes(db_session, monkeypatch):
     assert res.issues == []
 
 
+def test_vision_missing_image_creates_missing_issue(db_session):
+    # 只配置图种/内容要素（视觉检查）但节点未检出附图（任务 561 场景）：
+    # 应生成一条可配置的「无图审核」提示进问题列表
+    user_node = {"id": "u1", "content": ["正文无图"], "children": []}
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n37",
+        node_title_path="3.救援医院信息",
+        config=NodeImageConfig(kind_note="包含路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+        title_path=["3.救援医院信息"],
+    )
+    assert res.passed is True
+    assert res.summary == "无图审核"
+    assert len(res.issues) == 1
+    iss = res.issues[0]
+    assert iss.severity == "info"
+    assert iss.message == "无图审核"
+    assert iss.related["check_item_id"] == "n37-img-none"
+    assert iss.anchor["template_node_id"] == "n37"
+    assert iss.anchor["title_path"] == ["3.救援医院信息"]
+
+
+def test_vision_missing_image_uses_custom_text(db_session):
+    user_node = {"id": "u1", "content": ["正文无图"], "children": []}
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n37",
+        node_title_path="3.救援医院信息",
+        config=NodeImageConfig(kind_note="包含路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+        missing_text="配置了图审核但缺少图",
+    )
+    assert res.issues[0].message == "配置了图审核但缺少图"
+    assert res.summary == "配置了图审核但缺少图"
+
+
+def test_existence_missing_does_not_duplicate_missing_text(db_session):
+    # 存在性缺图已有「缺少附图」error issue，不再追加「无图审核」提示
+    user_node = {"id": "u1", "content": ["正文无图"], "children": []}
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n37",
+        node_title_path="3.救援医院信息",
+        config=NodeImageConfig(existence_note="施工总平面布置图", kind_note="包含路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+    )
+    assert res.passed is False
+    assert len(res.issues) == 1
+    assert res.issues[0].severity == "error"
+    assert "缺少附图" in res.issues[0].message
+
+
 def test_vision_guardrail_over_limit(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.services.image_review.minio_storage.get_object_bytes",

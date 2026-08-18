@@ -96,6 +96,7 @@ export default function TemplatesPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [globalRulesDraft, setGlobalRulesDraft] = useState<string>('')
   const [imageRulesDraft, setImageRulesDraft] = useState<string>('')
+  const [missingTextDraft, setMissingTextDraft] = useState<string>('')
   const [historyCtx, setHistoryCtx] = useState<{ nodeId: string; field: string; title: string } | null>(null)
   const [regressionOpen, setRegressionOpen] = useState(false)
   const [optimizeCtx, setOptimizeCtx] = useState<{
@@ -242,6 +243,32 @@ export default function TemplatesPage() {
     },
   })
 
+  const saveMissingTextMut = useMutation({
+    mutationFn: async (text: string) => {
+      if (!preview?.scheme_type_id) {
+        throw new Error('缺少方案 id')
+      }
+      const { data } = await api.put<TemplatePublic>(
+        `/scheme-types/${preview.scheme_type_id}/template/image-review-missing-text`,
+        { image_review_missing_text: text },
+      )
+      return data
+    },
+    onSuccess: (updated) => {
+      message.success('已保存缺图提示文案')
+      setPreview(updated)
+      setMissingTextDraft(updated.image_review_missing_text ?? '')
+      void qc.invalidateQueries({ queryKey: ['schemes'] })
+    },
+    onError: (err: unknown) => {
+      const raw =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+          : undefined
+      message.error(typeof raw === 'string' ? raw : '保存失败')
+    },
+  })
+
   const selectedNode = useMemo(() => {
     if (!selectedNodeId || !structureDraft?.nodes.length) return null
     return findNodeById(structureDraft.nodes, selectedNodeId)
@@ -371,6 +398,7 @@ export default function TemplatesPage() {
                       setPreview(data)
                       setGlobalRulesDraft(data.content_review_rules ?? '')
                       setImageRulesDraft(data.image_review_rules ?? '')
+                      setMissingTextDraft(data.image_review_missing_text ?? '')
                     } catch {
                       message.warning('该方案尚未上传模版')
                     }
@@ -541,6 +569,40 @@ export default function TemplatesPage() {
               disabled={!preview?.scheme_type_id}
               onClick={() =>
                 setHistoryCtx({ nodeId: '', field: 'image_review_rules', title: '图审核全局规则' })
+              }
+            >
+              历史
+            </Button>
+          </Space>
+          <Divider style={{ margin: '14px 0 10px' }} />
+          <Typography.Text strong>缺图提示文案</Typography.Text>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 8 }}>
+            节点配置了图审核（图种/内容要素）但文档未检出附图时，在问题列表展示的说明文字；
+            留空使用默认「无图审核」。
+          </Typography.Paragraph>
+          <Input
+            value={missingTextDraft}
+            onChange={(e) => setMissingTextDraft(e.target.value)}
+            placeholder="无图审核"
+            maxLength={100}
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button
+              type="primary"
+              loading={saveMissingTextMut.isPending}
+              onClick={() => saveMissingTextMut.mutate(missingTextDraft)}
+            >
+              保存缺图提示文案
+            </Button>
+            <Button
+              icon={<HistoryOutlined />}
+              disabled={!preview?.scheme_type_id}
+              onClick={() =>
+                setHistoryCtx({
+                  nodeId: '',
+                  field: 'image_review_missing_text',
+                  title: '图审核缺图提示文案',
+                })
               }
             >
               历史

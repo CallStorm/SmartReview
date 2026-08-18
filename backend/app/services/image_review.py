@@ -244,12 +244,15 @@ def review_node_images(
     template_updated_at: str,
     debug_prompts: list[dict[str, Any]] | None = None,
     title_path: list[str] | None = None,
+    missing_text: str = "无图审核",
 ) -> NodeImageReviewResult:
     """审核单个模板节点（含子树）的附图。视觉部分带结果缓存。
 
     多图判定语义：只要有一张附图满足文本框要求即通过（任一通过 → 节点通过）；
     仅当所有图都不满足时才判不通过并汇总各图问题。
     debug_prompts：调试开关开启时逐图追加（step_id=image_review）的拼接提示词。
+    missing_text：配置了图种/内容要素视觉检查但未检出附图时，在问题列表展示的
+    可配置说明文字（模板级「缺图提示文案」），默认「无图审核」。
     """
     res = NodeImageReviewResult()
     images = collect_node_images(user_node)
@@ -277,7 +280,26 @@ def review_node_images(
     # 2) 视觉判定：无图或未勾选图种/要素时直接收尾
     if not config.needs_vision or not images:
         if not res.summary:
-            res.summary = "存在性审核通过" if config.existence_note else "无需图审核"
+            if config.existence_note:
+                res.summary = "存在性审核通过"
+            elif config.needs_vision and not res.issues:
+                # 配置了图种/内容要素视觉检查但未检出附图：生成一条可配置提示
+                # 进问题列表，让审核人员知晓该节点的图审核规则未能执行（任务 561）
+                res.summary = missing_text.strip() or "无图审核"
+                res.issues.append(
+                    ReportIssue(
+                        severity="info",
+                        message=res.summary,
+                        evidence="本章节及子章节未检出任何附图标记（[附图]），图种/内容要素视觉审核未执行",
+                        anchor={
+                            "template_node_id": template_node_id,
+                            "title_path": title_path or [],
+                        },
+                        related={"check_item_id": f"{template_node_id}-img-none"},
+                    )
+                )
+            else:
+                res.summary = "无需图审核"
         # 存在性通过的节点也进通过列表（节点/图展示时不被遗漏）
         if config.existence_note and images and res.passed:
             res.image_items.append(
@@ -340,6 +362,13 @@ def review_node_images(
             cached = cache_lookup(ldb, fingerprint)
         except Exception:
             cached = None
+        # 只读缓存查询后立即归还连接：后续逐图视觉判定（每图 LLM 调用）期间
+        # 连接可能空闲数分钟，若中间层（NAT/防火墙 ~300s 空闲超时）回收，
+        # 写缓存时会 Lost connection(2013)。回池后由 pool_pre_ping/recycle 接管。
+        try:
+            ldb.rollback()
+        except Exception:
+            pass
     if cached is not None:
         res.cached = True
         res.passed = res.passed and cached.passed

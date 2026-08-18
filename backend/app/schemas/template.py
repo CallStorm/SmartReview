@@ -89,6 +89,13 @@ class ImageReviewRulesUpdate(BaseModel):
     image_review_rules: str = ""
 
 
+class ImageReviewMissingTextUpdate(BaseModel):
+    """模板级「缺图提示文案」：节点配置了图审核（图种/内容要素）但未检出附图时，
+    在问题列表中展示的说明文字。空字符串表示未设置（用默认「无图审核」）。"""
+
+    image_review_missing_text: str = ""
+
+
 class TemplateStructureUpdate(BaseModel):
     """更新已保存的解析结构 JSON（含节点上的引用/知识库/审核提示/编制依据开关/上下文一致性比对与一致性提示词等配置）。"""
 
@@ -106,6 +113,7 @@ class TemplatePublic(BaseModel):
     full_document_review_config: dict[str, Any] | None = None
     content_review_rules: str | None = None
     image_review_rules: str | None = None
+    image_review_missing_text: str | None = None
     structure_match_mode: str = "exact"
     parsed_at: datetime | None
     updated_at: datetime | None

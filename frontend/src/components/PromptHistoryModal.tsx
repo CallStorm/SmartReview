@@ -33,6 +33,7 @@ const FIELD_LABELS: Record<string, string> = {
   content_review_rules: '内容审核全局规则',
   full_document_review_prompt: '通篇审核提示词',
   image_review_rules: '图审核全局规则',
+  image_review_missing_text: '图审核缺图提示文案',
   image_review: '图审核配置',
 }
 

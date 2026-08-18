@@ -34,6 +34,9 @@ class TestStructureMatchModeApi(TestCase):
         tmpl.parsed_structure = '{"nodes":[]}'
         tmpl.review_workflow = None
         tmpl.full_document_review_config = None
+        tmpl.content_review_rules = None
+        tmpl.image_review_rules = None
+        tmpl.image_review_missing_text = None
         tmpl.structure_match_mode = "exact"
         tmpl.parsed_at = None
         tmpl.updated_at = None
@@ -75,6 +78,9 @@ class TestStructureMatchModeApi(TestCase):
         tmpl.parsed_structure = '{"nodes":[]}'
         tmpl.review_workflow = None
         tmpl.full_document_review_config = None
+        tmpl.content_review_rules = None
+        tmpl.image_review_rules = None
+        tmpl.image_review_missing_text = None
         tmpl.structure_match_mode = "exact"
         tmpl.parsed_at = None
         tmpl.updated_at = None

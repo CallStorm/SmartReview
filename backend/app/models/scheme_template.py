@@ -32,6 +32,9 @@ class SchemeTemplate(Base):
     content_review_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 模板级「图审核全局规则」：注入到每个图审核节点的视觉模型 prompt
     image_review_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 模板级「缺图提示文案」：节点配置了图审核（图种/内容要素）但未检出附图时，
+    # 在问题列表中展示的说明文字；未设置时默认「无图审核」
+    image_review_missing_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     structure_match_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="exact", default="exact"
     )

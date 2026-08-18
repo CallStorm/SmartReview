@@ -189,6 +189,11 @@ const SEVERITY_META: Record<string, { label: string; color: string }> = {
   info: { label: '提示', color: 'blue' },
 }
 
+/** 步骤是否需标红/「有问题」：以问题列表为准（含 info 提示，如图审核「无图审核」），passed 兜底 */
+function stepHasIssues(step: ReportStep): boolean {
+  return (step.issues?.length ?? 0) > 0 || !step.passed
+}
+
 const MODERN_TABLE_HEADER_STYLE = {
   background: '#F8FAFC',
   color: '#1E293B',
@@ -554,15 +559,17 @@ export default function ManualReviewPage() {
           {steps.length === 0 ? (
             <Empty description="暂无审核步骤数据" />
           ) : (
-            steps.map((s, i) => (
-              <div
-                key={`${s.step_id}-${i}`}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
+            steps.map((s, i) => {
+              const stepFailed = stepHasIssues(s)
+              return (
+                <div
+                  key={`${s.step_id}-${i}`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                  }}
+                >
                 <Button
                   type="default"
                   shape="circle"
@@ -571,8 +578,8 @@ export default function ManualReviewPage() {
                   style={{
                     width: 48,
                     height: 48,
-                    borderColor: s.passed ? '#52c41a' : '#ff4d4f',
-                    color: s.passed ? '#52c41a' : '#ff4d4f',
+                    borderColor: stepFailed ? '#ff4d4f' : '#52c41a',
+                    color: stepFailed ? '#ff4d4f' : '#52c41a',
                     fontWeight: 600,
                     background: selectedIdx === i ? 'rgba(22, 119, 255, 0.08)' : undefined,
                   }}
@@ -594,8 +601,9 @@ export default function ManualReviewPage() {
                     style={{ margin: '8px 0', color: 'rgba(0,0,0,0.35)' }}
                   />
                 )}
-              </div>
-            ))
+                </div>
+              )
+            })
           )}
         </div>
 
@@ -630,8 +638,8 @@ export default function ManualReviewPage() {
           ) : (
             <>
               <Space style={{ marginBottom: 12 }}>
-                <Tag color={activeStep.passed ? 'success' : 'error'}>
-                  {activeStep.passed ? '通过' : '有问题'}
+                <Tag color={stepHasIssues(activeStep) ? 'error' : 'success'}>
+                  {stepHasIssues(activeStep) ? '有问题' : '通过'}
                 </Tag>
                 <Typography.Text type="secondary">{activeStep.summary}</Typography.Text>
               </Space>

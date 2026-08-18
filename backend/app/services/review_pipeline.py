@@ -720,6 +720,12 @@ def _content_node_worker(
             fingerprint = ""
             logs.append(("warning", f"content 节点结果缓存查询失败 id={tid}: {e!s}"))
 
+        # 长 LLM 阶段前归还连接回池：上面仅做了只读查询（provider/model、缓存查找），
+        # 立即 rollback 结束隐式事务释放连接。否则连接将被本线程持有空闲数分钟
+        # （LLM 判定期间），若中间层（NAT/防火墙 ~300s 空闲超时）回收，LLM 后写缓存
+        # 会 Lost connection(2013)。回池后由 pool_pre_ping + pool_recycle 接管保活。
+        ldb.rollback()
+
         kb_text = ""
         if ds and dify_url and dify_key:
             kb_t0 = perf_counter()
@@ -1868,6 +1874,7 @@ def run_review_pipeline(task_id: int) -> None:
                 )
             else:
                 img_global_rules = (tmpl.image_review_rules or "").strip()
+                img_missing_text = (tmpl.image_review_missing_text or "").strip() or "无图审核"
                 img_updated_at = str(tmpl.updated_at.isoformat() if tmpl.updated_at else "")
                 img_concurrency = max(1, min(get_content_concurrency(db), 4))
                 img_work: list[tuple[int, tuple[dict, Any, Any, str, str, list[str]]]] = []
@@ -1906,6 +1913,7 @@ def run_review_pipeline(task_id: int) -> None:
                             template_updated_at=img_updated_at,
                             debug_prompts=debug_prompts if prompt_debug_enabled else None,
                             title_path=tp_list,
+                            missing_text=img_missing_text,
                         )
                         return (tid, _r)
                     finally:
