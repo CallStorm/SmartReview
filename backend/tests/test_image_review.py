@@ -12,9 +12,14 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
 from app.services.image_review import (
+    IMAGE_REVIEW_VERSION,
     NodeImageConfig,
+    build_describe_user_prompt,
+    build_judge_user_prompt,
     collect_node_images,
     compress_image_bytes,
+    image_describe_fingerprint,
+    image_judge_fingerprint,
     image_node_fingerprint,
     parse_node_image_config,
     review_node_images,
@@ -284,6 +289,57 @@ def test_vision_guardrail_over_limit(db_session, monkeypatch):
     )
     assert res.passed is True
     assert any(i.related.get("check_item_id") == "n3-img-overflow" for i in res.issues)
+
+
+def test_image_review_version_is_img3():
+    assert IMAGE_REVIEW_VERSION == "img-3"
+
+
+def test_build_describe_user_prompt_is_short_and_non_judging():
+    p = build_describe_user_prompt()
+    assert "不要判断是否合格" in p
+    assert "路线图" in p  # 示例图种
+    assert "审核要求" not in p
+
+
+def test_build_judge_user_prompt_includes_all_descriptions_and_kind_only():
+    p = build_judge_user_prompt(
+        node_title_path="八、应急 > 3.救援医院信息",
+        config=NodeImageConfig(kind_note="路线图"),
+        global_rules="",
+        captions=["丹凤县江南医院…"],
+        descriptions=[("路线图", "绿色路径从营销中心到医院方向")],
+    )
+    assert "路线图" in p
+    assert "图1" in p
+    assert "绿色路径" in p
+    assert "不要额外提高标准" in p
+    assert "至少一张" in p
+    # 未启用 content → 不应出现空的内容要素行强加标准
+    assert "内容要素：" not in p or "内容要素：\n" not in p
+
+
+def test_describe_and_judge_fingerprints_differ_by_inputs():
+    d1 = image_describe_fingerprint(model="vl", max_side=1536, image_sha256="aaa")
+    d2 = image_describe_fingerprint(model="vl", max_side=1536, image_sha256="bbb")
+    assert d1 != d2
+    j1 = image_judge_fingerprint(
+        text_provider="deepseek",
+        text_model="deepseek-v4-flash",
+        config=NodeImageConfig(kind_note="路线图"),
+        global_rules="",
+        template_updated_at="t1",
+        descriptions=[("路线图", "有路径", "cap")],
+    )
+    j2 = image_judge_fingerprint(
+        text_provider="deepseek",
+        text_model="deepseek-v4-flash",
+        config=NodeImageConfig(kind_note="平面布置图"),
+        global_rules="",
+        template_updated_at="t1",
+        descriptions=[("路线图", "有路径", "cap")],
+    )
+    assert j1 != j2
 
 
 def test_compress_image_bytes():

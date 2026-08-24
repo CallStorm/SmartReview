@@ -1,4 +1,4 @@
-"""图审核（独立于内容审核）：存在性确定性检查 + 视觉模型逐图判定。
+"""图审核（独立于内容审核）：存在性确定性检查 + 两段式识图/审核。
 
 模板节点配置（parsed_structure 节点上的 image_review 字段）：
     {
@@ -9,9 +9,9 @@
     }
 
 - existence：纯确定性（子树内是否存在 [附图] 标记），不调 LLM、零成本。
-- kind / content：逐图调视觉模型（MiniMax Anthropic 兼容协议，image block），
-  每图一个判定，check_item_id 形如 {tid}-img{k}。
-- 结果走 review_result_cache 独立指纹（图片内容哈希，不用含 UUID 的 object_key）。
+- kind / content：视觉模型逐图识图（kind + description），文本 LLM 节点级一次判定
+  （Task 2 接入流水线；本模块提供 prompt 纯函数与双指纹）。
+- 缓存拆两段：识图指纹（图内容 + 视觉模型）与审核指纹（描述集合 + 文本模型 + 规则）。
 """
 
 from __future__ import annotations
@@ -35,7 +35,9 @@ from app.services.llm.chat import extract_json_object
 from app.services.llm.resolve import ImageReviewConfig
 from app.services.review_cache import cache_lookup, cache_store
 
-IMAGE_REVIEW_VERSION = "img-2"
+IMAGE_REVIEW_VERSION = "img-3"
+DESCRIBE_PROMPT_VERSION = "desc-1"
+JUDGE_PROMPT_VERSION = "judge-1"
 IMAGE_STEP_ID = "image_review"
 
 _IMAGE_MARKER_RE = re.compile(r"^\[附图\]\s+(\S+)\s*$")
@@ -133,6 +135,97 @@ _IMAGE_SYSTEM_BASE = (
     "不通过时 issues 给出 severity/message/evidence，evidence 引用图中可见内容或其缺失。"
     "输出经 tool_use 提交结构化 JSON。"
 )
+
+DESCRIBE_SYSTEM = "只描述图片中实际可见的内容，不判定是否合格。"
+JUDGE_SYSTEM = "你是方案附图审核助手，只依据审核要求与识别结果判定，不要额外加严标准。"
+
+
+def build_describe_user_prompt() -> str:
+    """视觉识图 user prompt（极短，不含章节要求与判定语义）。"""
+    return (
+        "用一两段中文描述这张图实际看到的内容。\n"
+        "必须包含：\n"
+        "1) 图种（如：路线图/平面布置图/照片/表格截图/其他）\n"
+        "2) 图上可见的关键文字、标注、符号、路径或对象\n"
+        "不要判断是否合格，不要引用章节要求。"
+    )
+
+
+def build_judge_user_prompt(
+    *,
+    node_title_path: str,
+    config: NodeImageConfig,
+    global_rules: str,
+    captions: list[str],
+    descriptions: list[tuple[str, str]],
+) -> str:
+    """文本 LLM 节点级审核 user prompt（精简要求 + 全部图识别结果）。"""
+    lines = [
+        "根据【审核要求】与下列【附图识别结果】判定本章节附图是否通过。",
+        "规则：至少一张图满足全部已启用的要求 → 通过；否则不通过。",
+        "只依据识别结果中的可见内容，不要臆造图上没有的信息。",
+        "图说明仅供参考，不作为通过条件。",
+        "图种匹配时语义同类即可（如「路线图」含导航/路径规划截图），不要额外提高标准。",
+        "",
+        f"所在章节：{node_title_path}",
+        "【审核要求】",
+    ]
+    if config.kind_note:
+        lines.append(f"- 图种：{config.kind_note}")
+    if config.content_note:
+        lines.append(f"- 内容要素：{config.content_note}")
+    if global_rules.strip():
+        lines.append(f"【全局规则】\n{global_rules.strip()}")
+    lines.append("")
+    lines.append("【附图识别结果】")
+    for i, (kind, desc) in enumerate(descriptions, start=1):
+        cap = captions[i - 1] if i - 1 < len(captions) else ""
+        part = f"图{i}：图种={kind}；描述={desc}"
+        if cap:
+            part += f"；图说明={cap}"
+        lines.append(part)
+    return "\n".join(lines)
+
+
+def image_describe_fingerprint(*, model: str, max_side: int, image_sha256: str) -> str:
+    payload = {
+        "v": IMAGE_REVIEW_VERSION,
+        "prompt_v": DESCRIBE_PROMPT_VERSION,
+        "model": model,
+        "max_side": max_side,
+        "image_sha256": image_sha256,
+    }
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def image_judge_fingerprint(
+    *,
+    text_provider: str,
+    text_model: str,
+    config: NodeImageConfig,
+    global_rules: str,
+    template_updated_at: str,
+    descriptions: list[tuple[str, str, str]],
+) -> str:
+    """descriptions 项为 (kind, description, caption)。"""
+    payload = {
+        "v": IMAGE_REVIEW_VERSION,
+        "prompt_v": JUDGE_PROMPT_VERSION,
+        "text_provider": text_provider,
+        "text_model": text_model,
+        "cfg": {
+            "kind": config.kind_note,
+            "content": config.content_note,
+        },
+        "rules": (global_rules or "").strip(),
+        "tmpl": template_updated_at or "",
+        "descriptions": [
+            {"kind": k, "desc": d, "cap": c} for k, d, c in descriptions
+        ],
+    }
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _image_user_prompt(
