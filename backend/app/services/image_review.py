@@ -9,8 +9,7 @@
     }
 
 - existence：纯确定性（子树内是否存在 [附图] 标记），不调 LLM、零成本。
-- kind / content：视觉模型逐图识图（kind + description），文本 LLM 节点级一次判定
-  （Task 2 接入流水线；本模块提供 prompt 纯函数与双指纹）。
+- kind / content：视觉模型逐图识图（kind + description），文本 LLM 节点级一次判定。
 - 缓存拆两段：识图指纹（图内容 + 视觉模型）与审核指纹（描述集合 + 文本模型 + 规则）。
 """
 
@@ -31,14 +30,15 @@ from app.schemas.review_report import ReportIssue, ReportStep
 from app.services import minio_storage
 from app.services.doc_tree_utils import iter_nodes
 from app.services.llm.adapters.anthropic import chat_anthropic_messages
-from app.services.llm.chat import extract_json_object
+from app.services.llm.chat import chat_json, extract_json_object
 from app.services.llm.resolve import ImageReviewConfig
-from app.services.review_cache import cache_lookup, cache_store
+from app.services.review_cache import cache_lookup, cache_store, provider_model_pair
 
 IMAGE_REVIEW_VERSION = "img-3"
 DESCRIBE_PROMPT_VERSION = "desc-1"
 JUDGE_PROMPT_VERSION = "judge-1"
 IMAGE_STEP_ID = "image_review"
+DESCRIBE_STEP_ID = "image_describe"
 
 _IMAGE_MARKER_RE = re.compile(r"^\[附图\]\s+(\S+)\s*$")
 # 图说明候选：[附图] 行之前最近的普通文字行（通常就是图题/图说明）
@@ -127,14 +127,6 @@ def compress_image_bytes(data: bytes, *, max_side: int) -> tuple[str, str]:
         im.save(buf, format="JPEG", quality=85)
     return "image/jpeg", base64.b64encode(buf.getvalue()).decode("ascii")
 
-
-_IMAGE_SYSTEM_BASE = (
-    "你是建筑施工方案审核专家，负责审核文档中的附图。逐项核对审核要求与图片实际内容，"
-    "判定必须基于图片中真实可见的要素，不得凭图说明文字推测。"
-    "通过(passed=true)时 summary 必须概括图中实际看到了什么作为引证；"
-    "不通过时 issues 给出 severity/message/evidence，evidence 引用图中可见内容或其缺失。"
-    "输出经 tool_use 提交结构化 JSON。"
-)
 
 DESCRIBE_SYSTEM = "只描述图片中实际可见的内容，不判定是否合格。"
 JUDGE_SYSTEM = "你是方案附图审核助手，只依据审核要求与识别结果判定，不要额外加严标准。"
@@ -228,38 +220,6 @@ def image_judge_fingerprint(
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _image_user_prompt(
-    *,
-    node_title_path: str,
-    caption: str,
-    config: NodeImageConfig,
-    global_rules: str,
-) -> str:
-    """图审核 prompt：审核要求只来自「启用图审核」配置的文本框（kind/content note），
-    不拼接内容审核的 review_prompt。图说明仅是背景参考，明确标注不构成审核要求，
-    避免模型把文档文字误当要求（任务 551 曾因此误判导航截图不满足"包含路线图"）。"""
-    checks: list[str] = []
-    if config.kind_note:
-        checks.append(f"图种识别：{config.kind_note}")
-    if config.content_note:
-        checks.append(f"内容要素：{config.content_note}")
-    lines = [
-        "请审核下方这张附图。",
-        f"所在章节：{node_title_path}",
-        f"图说明（仅作背景参考，不作为审核要求）：{caption or '（无）'}",
-        "【审核要求】只按下列文本框配置逐项核对：",
-    ]
-    lines.extend(f"{i}. {c}" for i, c in enumerate(checks, start=1))
-    lines.append(
-        "判定原则：只依据上述【审核要求】与图片实际内容对照；"
-        "要求图上标明的要素若实际未标出，视为不通过；"
-        "图片与要求的图种不符（如要求路线图但为照片），视为不通过。"
-    )
-    if global_rules.strip():
-        lines.append(f"【图审核全局规则】\n{global_rules.strip()}")
-    return "\n".join(lines)
-
-
 @dataclass
 class NodeImageReviewResult:
     passed: bool = True
@@ -272,57 +232,65 @@ class NodeImageReviewResult:
     image_items: list[dict[str, Any]] = field(default_factory=list)
 
 
-def image_node_fingerprint(
-    *,
-    model: str,
-    config: NodeImageConfig,
-    global_rules: str,
-    template_updated_at: str,
-    max_side: int,
-    images: list[tuple[str, str]],
-) -> str:
-    """images: [(sha256, caption)]。图片身份用内容哈希（object_key 含每次
-    上传的 UUID，纳入会导致同图重传永远 miss）；压缩参数 max_side 影响
-    送审输入，一并纳入。"""
-    payload = {
-        "v": IMAGE_REVIEW_VERSION,
-        "model": model,
-        "cfg": {
-            "existence": config.existence_note,
-            "kind": config.kind_note,
-            "content": config.content_note,
-        },
-        "rules": (global_rules or "").strip(),
-        "tmpl": template_updated_at or "",
-        "max_side": max_side,
-        "imgs": [{"h": h, "cap": c} for h, c in images],
+def _release_ldb(ldb: Session) -> None:
+    """只读缓存查询后立即归还连接，避免后续 LLM 空闲期间连接被中间层回收。"""
+    try:
+        ldb.rollback()
+    except Exception:
+        pass
+
+
+def _parse_describe_payload(summary: str) -> dict[str, str] | None:
+    try:
+        data = json.loads(summary or "")
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {
+        "kind": str(data.get("kind") or "").strip(),
+        "description": str(data.get("description") or "").strip(),
     }
-    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _vision_judge_image(
-    *,
-    cfg: ImageReviewConfig,
-    user_prompt: str,
-    global_rules: str,
-    image_bytes: bytes,
-) -> dict[str, Any]:
+def _vision_describe_image(*, cfg: ImageReviewConfig, image_bytes: bytes) -> dict[str, Any]:
+    """视觉模型只识图，返回规范化的 kind / description。"""
     media_type, b64 = compress_image_bytes(image_bytes, max_side=cfg.max_side)
-    system = _IMAGE_SYSTEM_BASE
-    if global_rules.strip():
-        system = f"{system}\n【图审核全局规则】\n{global_rules.strip()}"
     text = chat_anthropic_messages(
         base_url=cfg.base_url,
         api_key=cfg.api_key,
         model=cfg.model,
-        user_message=user_prompt,
-        system=system,
+        user_message=build_describe_user_prompt(),
+        system=DESCRIBE_SYSTEM,
         max_tokens=1024,
         timeout=120.0,
         images=[(media_type, b64)],
     )
-    return extract_json_object(text)
+    parsed = extract_json_object(text)
+    return {
+        "kind": str(parsed.get("kind") or "").strip(),
+        "description": str(parsed.get("description") or "").strip(),
+    }
+
+
+def _text_judge_node(ldb: Session, user_prompt: str) -> dict[str, Any]:
+    """文本 LLM 节点级一次判定。"""
+    return chat_json(
+        ldb,
+        user_message=user_prompt,
+        system=JUDGE_SYSTEM,
+        max_tokens=2048,
+    )
+
+
+def _matched_index_set(raw: Any) -> set[int]:
+    matched: set[int] = set()
+    for idx in raw or []:
+        try:
+            matched.add(int(idx))
+        except (TypeError, ValueError):
+            continue
+    return matched
 
 
 def review_node_images(
@@ -339,12 +307,12 @@ def review_node_images(
     title_path: list[str] | None = None,
     missing_text: str = "无图审核",
 ) -> NodeImageReviewResult:
-    """审核单个模板节点（含子树）的附图。视觉部分带结果缓存。
+    """审核单个模板节点（含子树）的附图。两段式：视觉识图 + 文本判定。
 
     多图判定语义：只要有一张附图满足文本框要求即通过（任一通过 → 节点通过）；
-    仅当所有图都不满足时才判不通过并汇总各图问题。
-    debug_prompts：调试开关开启时逐图追加（step_id=image_review）的拼接提示词。
-    missing_text：配置了图种/内容要素视觉检查但未检出附图时，在问题列表展示的
+    仅当所有图都不满足时才判不通过并汇总问题。
+    图审核提示词始终写入 image_items，不依赖 debug_prompts。
+    missing_text：配置了图种/内容要素但未检出附图时，在问题列表展示的
     可配置说明文字（模板级「缺图提示文案」），默认「无图审核」。
     """
     res = NodeImageReviewResult()
@@ -370,7 +338,7 @@ def review_node_images(
             ("info", f"图审核节点 {template_node_id} 存在性通过（{len(images)} 张附图）")
         )
 
-    # 2) 视觉判定：无图或未勾选图种/要素时直接收尾
+    # 2) 无图或未勾选图种/要素时直接收尾（不调视觉/文本）
     if not config.needs_vision or not images:
         if not res.summary:
             if config.existence_note:
@@ -435,156 +403,54 @@ def review_node_images(
             ("warning", f"图审核节点 {template_node_id} 附图 {len(fetched)} 张超上限，仅审核前 {cfg.max_per_node} 张")
         )
 
-    # 缓存查询（节点级：全部图的判定结果）
-    # 调试模式（debug_prompts 传入）跳过缓存：调试要看真实 prompt 与判定，命中缓存会采不到。
-    fingerprint = image_node_fingerprint(
-        model=cfg.model,
-        config=config,
-        global_rules=global_rules,
-        template_updated_at=template_updated_at,
-        max_side=cfg.max_side,
-        images=[(h, c) for h, c, _key, _b in reviewed],
-    )
-    cached = None
-    if debug_prompts is not None:
-        res.logs.append(
-            ("info", f"图审核节点 {template_node_id} 调试模式跳过结果缓存，重新视觉判定")
-        )
-    else:
-        try:
-            cached = cache_lookup(ldb, fingerprint)
-        except Exception:
-            cached = None
-        # 只读缓存查询后立即归还连接：后续逐图视觉判定（每图 LLM 调用）期间
-        # 连接可能空闲数分钟，若中间层（NAT/防火墙 ~300s 空闲超时）回收，
-        # 写缓存时会 Lost connection(2013)。回池后由 pool_pre_ping/recycle 接管。
-        try:
-            ldb.rollback()
-        except Exception:
-            pass
-    if cached is not None:
-        res.cached = True
-        res.passed = res.passed and cached.passed
-        res.summary = cached.summary or res.summary
-        res.issues.extend(cached.issues)
-        res.image_items = cached.image_items or []
-        res.logs.append(
-            ("info", f"图审核节点 {template_node_id} 命中结果缓存（图件与规则未变化）")
-        )
-        return res
-
-    vision_failed = 0
-    passed_any = False
-    passed_imgs: list[int] = []
-    failed_issues: list[ReportIssue] = []
-    passed_summary: str = ""
-    # 审图类别：视觉判定行对应节点配置的图种/内容要素检查组合
     review_category = "+".join(
         cat for cat, on in (("kind", config.kind_note), ("content", config.content_note)) if on
     ) or "vision"
+    describe_prompt = build_describe_user_prompt()
+
+    described: list[tuple[str, str, str, str, str]] = []
+    # (sha, caption, object_key, kind, description)
+    vision_failed = 0
     for k, (sha, caption, object_key, data) in enumerate(reviewed, start=1):
-        user_prompt = _image_user_prompt(
-            node_title_path=node_title_path,
-            caption=caption,
-            config=config,
-            global_rules=global_rules,
-        )
-        dbg_entry: dict[str, Any] = {
-            "step_id": IMAGE_STEP_ID,
-            "template_node_id": template_node_id,
-            "title_path": title_path or [],
-            "prompt_text": user_prompt,
-            "prompt_length": len(user_prompt),
-            "image_object_key": object_key,
-            "image_caption": caption,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        if debug_prompts is not None:
-            debug_prompts.append(dbg_entry)
+        fp = image_describe_fingerprint(model=cfg.model, max_side=cfg.max_side, image_sha256=sha)
+        cached_desc = None
         try:
-            verdict = _vision_judge_image(
-                cfg=cfg, user_prompt=user_prompt, global_rules=global_rules, image_bytes=data
-            )
+            cached_desc = cache_lookup(ldb, fp)
+        except Exception:
+            cached_desc = None
+        _release_ldb(ldb)
+        payload = _parse_describe_payload(cached_desc.summary) if cached_desc is not None else None
+        if payload is not None:
+            described.append((sha, caption, object_key, payload["kind"], payload["description"]))
+            continue
+        try:
+            verdict = _vision_describe_image(cfg=cfg, image_bytes=data)
         except Exception as e:
             vision_failed += 1
-            res.logs.append(("error", f"图审核节点 {template_node_id} 第 {k} 张图判定失败: {e!s}"))
+            res.logs.append(("error", f"图审核节点 {template_node_id} 第 {k} 张图识图失败: {e!s}"))
+            described.append((sha, caption, object_key, "", ""))
             continue
-        sub_passed = bool(verdict.get("passed"))
-        # 补上模型判定结果（识别出的图内容），供前端调试表格展示
-        dbg_entry["model_passed"] = sub_passed
-        dbg_entry["model_summary"] = str(verdict.get("summary") or "")
-        # 逐图结果（非调试依赖，供通过列表/问题列表展示）
-        item_issues: list[dict[str, Any]] = []
-        if sub_passed:
-            passed_any = True
-            passed_imgs.append(k)
-            if not passed_summary:
-                passed_summary = str(verdict.get("summary") or "满足图审核要求")
-        else:
-            for it in verdict.get("issues") or []:
-                if not isinstance(it, dict):
-                    continue
-                item_issues.append(
-                    {
-                        "severity": str(it.get("severity") or "error"),
-                        "message": str(it.get("message") or "不满足图审核要求"),
-                        "evidence": str(it.get("evidence") or ""),
-                    }
-                )
-                failed_issues.append(
-                    ReportIssue(
-                        severity=str(it.get("severity") or "error"),
-                        message=f"第 {k} 张附图：{it.get('message') or '不满足图审核要求'}",
-                        evidence=str(it.get("evidence") or ""),
-                        anchor={"template_node_id": template_node_id},
-                        related={
-                            "check_item_id": f"{template_node_id}-img{k}",
-                            "image_caption": caption,
-                            "image_object_key": object_key,
-                            "image_sha256": sha[:16],
-                        },
-                    )
-                )
-        res.image_items.append(
-            {
-                "template_node_id": template_node_id,
-                "title_path": title_path or [],
-                "review_category": review_category,
-                "image_object_key": object_key,
-                "image_caption": caption,
-                "passed": sub_passed,
-                "summary": str(verdict.get("summary") or ""),
-                "issues": item_issues,
-            }
-        )
-
-    # 多图判定：任一图满足文本框要求即节点通过；仅当全部不满足时才汇总问题
-    if passed_any:
-        res.passed = True
-        res.summary = (
-            f"通过：第 {'、'.join(str(i) for i in passed_imgs)} 张附图满足图审核要求"
-            f"（{passed_summary}）"
-        )
-    else:
-        res.passed = False
-        res.issues.extend(failed_issues)
-        if res.issues and not res.summary:
-            res.summary = f"未发现满足图审核要求的附图（{len(failed_issues)} 条问题）"
-
-    if overflow:
-        res.issues.append(
-            ReportIssue(
-                severity="info",
-                message=f"本节点附图共 {len(fetched)} 张，超出单节点审核上限 {cfg.max_per_node} 张，"
-                f"后 {overflow} 张未审核（可在模型设置的图审核护栏中调整上限）",
-                evidence="",
-                anchor={"template_node_id": template_node_id},
-                related={"check_item_id": f"{template_node_id}-img-overflow"},
+        kind = str(verdict.get("kind") or "").strip()
+        description = str(verdict.get("description") or "").strip()
+        described.append((sha, caption, object_key, kind, description))
+        try:
+            cache_store(
+                ldb,
+                fingerprint=fp,
+                step_id=DESCRIBE_STEP_ID,
+                template_node_id=template_node_id,
+                step=ReportStep(
+                    step_id=DESCRIBE_STEP_ID,
+                    passed=True,
+                    summary=json.dumps({"kind": kind, "description": description}, ensure_ascii=False),
+                ),
             )
-        )
+        except Exception as e:
+            res.logs.append(("warning", f"图审核节点 {template_node_id} 识图缓存写入失败: {e!s}"))
+
     if vision_failed == len(reviewed) and reviewed:
         res.summary = "存在性审核通过；视觉模型调用失败，图种/要素审核未执行"
-        res.logs.append(("error", f"图审核节点 {template_node_id} 视觉判定全部失败"))
+        res.logs.append(("error", f"图审核节点 {template_node_id} 视觉识图全部失败"))
         res.issues.append(
             ReportIssue(
                 severity="info",
@@ -597,24 +463,182 @@ def review_node_images(
                 related={"check_item_id": f"{template_node_id}-img-err"},
             )
         )
-
-    # 缓存写入：仅在全部图判定成功时写入，避免把失败状态缓存住
-    if vision_failed == 0:
-        try:
-            cache_store(
-                ldb,
-                fingerprint=fingerprint,
-                step_id=IMAGE_STEP_ID,
-                template_node_id=template_node_id,
-                step=ReportStep(
-                    step_id=IMAGE_STEP_ID,
-                    passed=res.passed,
-                    summary=res.summary,
-                    issues=res.issues,
-                    image_items=res.image_items,
-                ),
+        if overflow:
+            res.issues.append(
+                ReportIssue(
+                    severity="info",
+                    message=f"本节点附图共 {len(fetched)} 张，超出单节点审核上限 {cfg.max_per_node} 张，"
+                    f"后 {overflow} 张未审核（可在模型设置的图审核护栏中调整上限）",
+                    evidence="",
+                    anchor={"template_node_id": template_node_id},
+                    related={"check_item_id": f"{template_node_id}-img-overflow"},
+                )
             )
-        except Exception as e:
-            res.logs.append(("warning", f"图审核节点 {template_node_id} 结果缓存写入失败: {e!s}"))
+        return res
+
+    captions = [cap for _sha, cap, _key, _kind, _desc in described]
+    desc_pairs = [(kind, desc) for _sha, _cap, _key, kind, desc in described]
+    judge_prompt = build_judge_user_prompt(
+        node_title_path=node_title_path,
+        config=config,
+        global_rules=global_rules,
+        captions=captions,
+        descriptions=desc_pairs,
+    )
+    if debug_prompts is not None:
+        debug_prompts.append(
+            {
+                "step_id": IMAGE_STEP_ID,
+                "template_node_id": template_node_id,
+                "title_path": title_path or [],
+                "prompt_text": judge_prompt,
+                "prompt_length": len(judge_prompt),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+    text_provider, text_model = provider_model_pair(ldb)
+    judge_fp = image_judge_fingerprint(
+        text_provider=text_provider,
+        text_model=text_model,
+        config=config,
+        global_rules=global_rules,
+        template_updated_at=template_updated_at,
+        descriptions=[(kind, desc, cap) for _sha, cap, _key, kind, desc in described],
+    )
+    cached_judge = None
+    try:
+        cached_judge = cache_lookup(ldb, judge_fp)
+    except Exception:
+        cached_judge = None
+    _release_ldb(ldb)
+    if cached_judge is not None:
+        res.cached = True
+        res.passed = bool(cached_judge.passed)
+        res.summary = cached_judge.summary or res.summary
+        res.issues.extend(cached_judge.issues)
+        res.image_items = cached_judge.image_items or []
+        res.logs.append(
+            ("info", f"图审核节点 {template_node_id} 命中审核结果缓存（描述与规则未变化）")
+        )
+        return res
+
+    try:
+        verdict = _text_judge_node(ldb, judge_prompt)
+    except Exception as e:
+        res.passed = False
+        res.summary = "存在性审核通过；文本模型调用失败，图种/要素审核未执行"
+        res.logs.append(("error", f"图审核节点 {template_node_id} 文本判定失败: {e!s}"))
+        res.issues.append(
+            ReportIssue(
+                severity="info",
+                message="文本模型调用失败，图种与内容要素审核未执行，请检查默认文本模型配置",
+                evidence=str(e),
+                anchor={"template_node_id": template_node_id},
+                related={"check_item_id": f"{template_node_id}-img-judge-err"},
+            )
+        )
+        if overflow:
+            res.issues.append(
+                ReportIssue(
+                    severity="info",
+                    message=f"本节点附图共 {len(fetched)} 张，超出单节点审核上限 {cfg.max_per_node} 张，"
+                    f"后 {overflow} 张未审核（可在模型设置的图审核护栏中调整上限）",
+                    evidence="",
+                    anchor={"template_node_id": template_node_id},
+                    related={"check_item_id": f"{template_node_id}-img-overflow"},
+                )
+            )
+        return res
+
+    matched = _matched_index_set(verdict.get("matched_image_indexes"))
+    node_passed = bool(verdict.get("passed"))
+    res.passed = node_passed
+    res.summary = str(verdict.get("summary") or ("满足图审核要求" if node_passed else "未发现满足图审核要求的附图"))
+
+    judge_issue_dicts: list[dict[str, Any]] = []
+    for it in verdict.get("issues") or []:
+        if isinstance(it, dict):
+            judge_issue_dicts.append(
+                {
+                    "severity": str(it.get("severity") or "error"),
+                    "message": str(it.get("message") or "不满足图审核要求"),
+                    "evidence": str(it.get("evidence") or ""),
+                }
+            )
+
+    for k, (sha, caption, object_key, kind, description) in enumerate(described, start=1):
+        item_passed = k in matched
+        item_issues = [] if item_passed else list(judge_issue_dicts)
+        res.image_items.append(
+            {
+                "template_node_id": template_node_id,
+                "title_path": title_path or [],
+                "review_category": review_category,
+                "image_object_key": object_key,
+                "image_caption": caption,
+                "kind": kind,
+                "description": description,
+                "summary": f"{kind}。{description}" if (kind or description) else "",
+                "passed": item_passed,
+                "issues": item_issues,
+                "review_prompt_text": judge_prompt,
+                "describe_prompt_text": describe_prompt,
+            }
+        )
+
+    if not node_passed:
+        unmatched = [i for i in range(1, len(described) + 1) if i not in matched]
+        attach_k = unmatched[0] if unmatched else 1
+        for it in judge_issue_dicts:
+            related: dict[str, Any] = {"check_item_id": f"{template_node_id}-img-judge"}
+            if 1 <= attach_k <= len(described):
+                _sha, cap, object_key, kind, description = described[attach_k - 1]
+                related.update(
+                    {
+                        "image_caption": cap,
+                        "image_object_key": object_key,
+                        "description": description,
+                    }
+                )
+            res.issues.append(
+                ReportIssue(
+                    severity=it["severity"] if it["severity"] in ("error", "warning", "info") else "error",
+                    message=it["message"],
+                    evidence=it["evidence"],
+                    anchor={"template_node_id": template_node_id},
+                    related=related,
+                )
+            )
+
+    if overflow:
+        res.issues.append(
+            ReportIssue(
+                severity="info",
+                message=f"本节点附图共 {len(fetched)} 张，超出单节点审核上限 {cfg.max_per_node} 张，"
+                f"后 {overflow} 张未审核（可在模型设置的图审核护栏中调整上限）",
+                evidence="",
+                anchor={"template_node_id": template_node_id},
+                related={"check_item_id": f"{template_node_id}-img-overflow"},
+            )
+        )
+
+    # 仅在判定成功时写入审核缓存；识图失败的图不把失败态写入识图缓存（上已跳过）
+    try:
+        cache_store(
+            ldb,
+            fingerprint=judge_fp,
+            step_id=IMAGE_STEP_ID,
+            template_node_id=template_node_id,
+            step=ReportStep(
+                step_id=IMAGE_STEP_ID,
+                passed=res.passed,
+                summary=res.summary,
+                issues=res.issues,
+                image_items=res.image_items,
+            ),
+        )
+    except Exception as e:
+        res.logs.append(("warning", f"图审核节点 {template_node_id} 审核结果缓存写入失败: {e!s}"))
 
     return res

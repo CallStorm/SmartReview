@@ -20,7 +20,6 @@ from app.services.image_review import (
     compress_image_bytes,
     image_describe_fingerprint,
     image_judge_fingerprint,
-    image_node_fingerprint,
     parse_node_image_config,
     review_node_images,
 )
@@ -99,43 +98,41 @@ def test_collect_node_images_with_caption():
 
 
 def test_fingerprint_stable_and_content_sensitive():
-    a = image_node_fingerprint(
-        model="m1",
-        config=NodeImageConfig(kind_note="路线图"),
-        global_rules="",
-        template_updated_at="t1",
-        max_side=1024,
-        images=[("h1", "cap1"), ("h2", "cap2")],
-    )
-    b = image_node_fingerprint(
-        model="m1",
-        config=NodeImageConfig(kind_note="路线图"),
-        global_rules="",
-        template_updated_at="t1",
-        max_side=1024,
-        images=[("h1", "cap1"), ("h2", "cap2")],
-    )
+    a = image_describe_fingerprint(model="m1", max_side=1024, image_sha256="h1")
+    b = image_describe_fingerprint(model="m1", max_side=1024, image_sha256="h1")
     assert a == b
-    # 图片内容哈希变化 -> 指纹变化
-    c = image_node_fingerprint(
-        model="m1",
-        config=NodeImageConfig(kind_note="路线图"),
-        global_rules="",
-        template_updated_at="t1",
-        max_side=1024,
-        images=[("h1", "cap1"), ("hX", "cap2")],
-    )
+    # 图片内容哈希变化 -> 识图指纹变化
+    c = image_describe_fingerprint(model="m1", max_side=1024, image_sha256="hX")
     assert a != c
-    # 压缩参数变化 -> 指纹变化
-    d = image_node_fingerprint(
-        model="m1",
+    # 压缩参数变化 -> 识图指纹变化
+    d = image_describe_fingerprint(model="m1", max_side=2048, image_sha256="h1")
+    assert a != d
+    j1 = image_judge_fingerprint(
+        text_provider="deepseek",
+        text_model="m1",
         config=NodeImageConfig(kind_note="路线图"),
         global_rules="",
         template_updated_at="t1",
-        max_side=2048,
-        images=[("h1", "cap1"), ("h2", "cap2")],
+        descriptions=[("路线图", "有路径", "cap1"), ("照片", "工地", "cap2")],
     )
-    assert a != d
+    j2 = image_judge_fingerprint(
+        text_provider="deepseek",
+        text_model="m1",
+        config=NodeImageConfig(kind_note="路线图"),
+        global_rules="",
+        template_updated_at="t1",
+        descriptions=[("路线图", "有路径", "cap1"), ("照片", "工地", "cap2")],
+    )
+    assert j1 == j2
+    j3 = image_judge_fingerprint(
+        text_provider="deepseek",
+        text_model="m1",
+        config=NodeImageConfig(kind_note="路线图"),
+        global_rules="",
+        template_updated_at="t1",
+        descriptions=[("路线图", "有路径", "cap1"), ("照片", "其他现场", "cap2")],
+    )
+    assert j1 != j3
 
 
 def test_existence_check_missing_image(db_session, monkeypatch):
@@ -242,30 +239,24 @@ def test_existence_missing_does_not_duplicate_missing_text(db_session):
 def test_vision_guardrail_over_limit(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.services.image_review.minio_storage.get_object_bytes",
-        lambda key: b"fake",
+        lambda key: b"fake-image-bytes",
     )
-
-    class _Img:
-        def __init__(self, size, mode="RGB"):
-            self._size, self._mode = size, mode
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    # 压缩走真实 Pillow，用小图字节
-    buf = io.BytesIO()
-    Image.new("RGB", (32, 32), "red").save(buf, format="PNG")
     monkeypatch.setattr(
-        "app.services.image_review.minio_storage.get_object_bytes",
-        lambda key: buf.getvalue(),
+        "app.services.image_review._vision_describe_image",
+        lambda **kw: {"kind": "布置图", "description": "平面布置"},
     )
-    # 视觉判定打桩：直接通过
     monkeypatch.setattr(
-        "app.services.image_review._vision_judge_image",
-        lambda **kw: {"passed": True, "summary": "通过", "issues": []},
+        "app.services.image_review.chat_json",
+        lambda *a, **k: {
+            "passed": True,
+            "summary": "通过",
+            "issues": [],
+            "matched_image_indexes": [1],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
     )
 
     user_node = {
@@ -350,3 +341,115 @@ def test_compress_image_bytes():
     out = io.BytesIO(__import__("base64").b64decode(b64))
     with Image.open(out) as im:
         assert max(im.size) <= 512
+
+
+def test_two_stage_kind_route_map_any_pass(db_session, monkeypatch):
+    """视觉只描述；文本判定图1为路线图 → 节点通过；两图都有 description；带 review_prompt_text。"""
+    calls = {"vision": 0, "text": 0}
+
+    def fake_get(key):
+        # 按 object_key 区分字节，避免两张图内容哈希相同导致识图缓存命中、只调一次视觉
+        return f"fake-image-bytes:{key}".encode()
+
+    def fake_describe(*, cfg, image_bytes):
+        calls["vision"] += 1
+        # 按调用次序：第一张路线图，第二张照片
+        if calls["vision"] == 1:
+            return {"kind": "路线图", "description": "绿线路径与推荐路线面板"}
+        return {"kind": "照片", "description": "工地现场"}
+
+    def fake_judge(ldb, *, user_message, system, max_tokens=2048):
+        calls["text"] += 1
+        assert "路线图" in user_message
+        assert "图1" in user_message and "图2" in user_message
+        return {
+            "passed": True,
+            "summary": "第1张为路线图，满足要求",
+            "issues": [],
+            "matched_image_indexes": [1],
+        }
+
+    monkeypatch.setattr("app.services.image_review.minio_storage.get_object_bytes", fake_get)
+    monkeypatch.setattr("app.services.image_review._vision_describe_image", fake_describe)
+    monkeypatch.setattr("app.services.image_review.chat_json", fake_judge)
+    # 避免真实压缩依赖有效图片
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
+    )
+
+    user_node = {
+        "id": "u1",
+        "content": [
+            "cap-a",
+            "[附图] reviews/1/images/a.png",
+            "cap-b",
+            "[附图] reviews/1/images/b.png",
+        ],
+        "children": [],
+    }
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(max_per_node=10),
+        template_node_id="n37",
+        node_title_path="八、应急 > 3.救援医院信息",
+        config=NodeImageConfig(kind_note="路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+        title_path=["八、应急", "3.救援医院信息"],
+    )
+    assert res.passed is True
+    assert calls["vision"] == 2
+    assert calls["text"] == 1
+    assert len(res.image_items) == 2
+    assert res.image_items[0]["passed"] is True
+    assert res.image_items[1]["passed"] is False
+    assert "路线图" in res.image_items[0]["summary"]
+    assert res.image_items[0]["description"]
+    assert "至少一张" in res.image_items[0]["review_prompt_text"]
+    assert res.image_items[0]["review_prompt_text"] == res.image_items[1]["review_prompt_text"]
+    assert res.image_items[0]["describe_prompt_text"]
+
+
+def test_two_stage_all_fail_still_has_descriptions(db_session, monkeypatch):
+    monkeypatch.setattr(
+        "app.services.image_review.minio_storage.get_object_bytes", lambda k: b"x"
+    )
+    monkeypatch.setattr(
+        "app.services.image_review._vision_describe_image",
+        lambda **kw: {"kind": "照片", "description": "无路径"},
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.chat_json",
+        lambda *a, **k: {
+            "passed": False,
+            "summary": "无路线图",
+            "issues": [{"severity": "error", "message": "未见路线图", "evidence": "均为照片"}],
+            "matched_image_indexes": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
+    )
+    user_node = {
+        "id": "u1",
+        "content": ["c", "[附图] reviews/1/images/a.png"],
+        "children": [],
+    }
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n1",
+        node_title_path="x",
+        config=NodeImageConfig(kind_note="路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+    )
+    assert res.passed is False
+    assert len(res.issues) >= 1
+    assert res.image_items[0]["passed"] is False
+    assert res.image_items[0]["description"] == "无路径"
+    assert res.image_items[0]["review_prompt_text"]
