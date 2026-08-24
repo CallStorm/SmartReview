@@ -453,3 +453,133 @@ def test_two_stage_all_fail_still_has_descriptions(db_session, monkeypatch):
     assert res.image_items[0]["passed"] is False
     assert res.image_items[0]["description"] == "无路径"
     assert res.image_items[0]["review_prompt_text"]
+
+
+def test_vision_all_describe_fail_does_not_pass(db_session, monkeypatch):
+    """识图全部失败时不得把 kind/content 节点标为通过。"""
+    calls = {"text": 0}
+
+    def boom(*, cfg, image_bytes):
+        raise RuntimeError("vision down")
+
+    def fake_judge(*a, **k):
+        calls["text"] += 1
+        return {"passed": True, "summary": "不应走到判定", "issues": [], "matched_image_indexes": [1]}
+
+    monkeypatch.setattr(
+        "app.services.image_review.minio_storage.get_object_bytes", lambda k: b"x"
+    )
+    monkeypatch.setattr("app.services.image_review._vision_describe_image", boom)
+    monkeypatch.setattr("app.services.image_review.chat_json", fake_judge)
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
+    )
+    user_node = {
+        "id": "u1",
+        "content": ["c", "[附图] reviews/1/images/a.png"],
+        "children": [],
+    }
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n37",
+        node_title_path="x",
+        config=NodeImageConfig(kind_note="路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+    )
+    assert res.passed is False
+    assert calls["text"] == 0
+    assert "视觉模型调用失败" in res.summary
+    assert any(i.related.get("check_item_id") == "n37-img-err" for i in res.issues)
+
+
+def test_judge_passed_true_empty_matched_is_fail(db_session, monkeypatch):
+    """LLM passed=true 但 matched 为空 → 节点不通过。"""
+    monkeypatch.setattr(
+        "app.services.image_review.minio_storage.get_object_bytes", lambda k: b"x"
+    )
+    monkeypatch.setattr(
+        "app.services.image_review._vision_describe_image",
+        lambda **kw: {"kind": "照片", "description": "工地"},
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.chat_json",
+        lambda *a, **k: {
+            "passed": True,
+            "summary": "模型声称通过",
+            "issues": [],
+            "matched_image_indexes": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
+    )
+    user_node = {
+        "id": "u1",
+        "content": ["c", "[附图] reviews/1/images/a.png"],
+        "children": [],
+    }
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(),
+        template_node_id="n1",
+        node_title_path="x",
+        config=NodeImageConfig(kind_note="路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+    )
+    assert res.passed is False
+    assert res.image_items[0]["passed"] is False
+
+
+def test_judge_passed_false_nonempty_matched_is_pass(db_session, monkeypatch):
+    """LLM passed=false 但 matched 非空 → 以索引 any-pass 为准。"""
+    monkeypatch.setattr(
+        "app.services.image_review.minio_storage.get_object_bytes",
+        lambda k: f"bytes:{k}".encode(),
+    )
+    monkeypatch.setattr(
+        "app.services.image_review._vision_describe_image",
+        lambda **kw: {"kind": "路线图", "description": "绿线路径"},
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.chat_json",
+        lambda *a, **k: {
+            "passed": False,
+            "summary": "模型声称不通过",
+            "issues": [{"severity": "error", "message": "未见路线图", "evidence": ""}],
+            "matched_image_indexes": [1],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.compress_image_bytes",
+        lambda data, *, max_side: ("image/jpeg", "aaa"),
+    )
+    user_node = {
+        "id": "u1",
+        "content": [
+            "cap-a",
+            "[附图] reviews/1/images/a.png",
+            "cap-b",
+            "[附图] reviews/1/images/b.png",
+        ],
+        "children": [],
+    }
+    res = review_node_images(
+        ldb=db_session,
+        cfg=_cfg(max_per_node=10),
+        template_node_id="n1",
+        node_title_path="x",
+        config=NodeImageConfig(kind_note="路线图"),
+        user_node=user_node,
+        global_rules="",
+        template_updated_at="t1",
+    )
+    assert res.passed is True
+    assert res.image_items[0]["passed"] is True
+    assert res.image_items[1]["passed"] is False

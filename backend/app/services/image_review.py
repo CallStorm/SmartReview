@@ -283,13 +283,16 @@ def _text_judge_node(ldb: Session, user_prompt: str) -> dict[str, Any]:
     )
 
 
-def _matched_index_set(raw: Any) -> set[int]:
+def _matched_index_set(raw: Any, n_images: int) -> set[int]:
+    """将 LLM 返回的索引规范为 1-based、且落在已审图范围内。"""
     matched: set[int] = set()
     for idx in raw or []:
         try:
-            matched.add(int(idx))
+            i = int(idx)
         except (TypeError, ValueError):
             continue
+        if 1 <= i <= n_images:
+            matched.add(i)
     return matched
 
 
@@ -449,6 +452,7 @@ def review_node_images(
             res.logs.append(("warning", f"图审核节点 {template_node_id} 识图缓存写入失败: {e!s}"))
 
     if vision_failed == len(reviewed) and reviewed:
+        res.passed = False
         res.summary = "存在性审核通过；视觉模型调用失败，图种/要素审核未执行"
         res.logs.append(("error", f"图审核节点 {template_node_id} 视觉识图全部失败"))
         res.issues.append(
@@ -551,8 +555,8 @@ def review_node_images(
             )
         return res
 
-    matched = _matched_index_set(verdict.get("matched_image_indexes"))
-    node_passed = bool(verdict.get("passed"))
+    matched = _matched_index_set(verdict.get("matched_image_indexes"), len(described))
+    node_passed = bool(matched)
     res.passed = node_passed
     res.summary = str(verdict.get("summary") or ("满足图审核要求" if node_passed else "未发现满足图审核要求的附图"))
 
