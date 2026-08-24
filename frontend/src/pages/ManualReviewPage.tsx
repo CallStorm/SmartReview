@@ -35,6 +35,15 @@ import type {
 import StructureReviewDetail from '../components/StructureReviewDetail'
 import { buildReviewExportFilename } from '../utils/reviewExportFilename'
 
+const PROMPT_PRE_STYLE = {
+  margin: 0,
+  whiteSpace: 'pre-wrap' as const,
+  fontSize: 12,
+  background: 'var(--ant-color-fill-quaternary)',
+  padding: 8,
+  borderRadius: 6,
+}
+
 const STEP_LABELS: Record<string, string> = {
   structure: '结构审核',
   compilation_basis: '编制依据审核',
@@ -91,53 +100,63 @@ function reviewCategoryOf(it: ImageReviewItem): string {
   return it.summary?.includes('存在性') ? '存在性' : '视觉判定'
 }
 
-/** 图审核步骤通过列表（图维度），行展开可见该图完整提示词；问题列表由通用渲染承担 */
-function ImageReviewDetail({
-  step,
-  debugPrompts,
-}: {
-  step: ReportStep
-  debugPrompts: DebugPromptItem[]
-}) {
+function imageRecognitionText(it: ImageReviewItem): string {
+  const summary = String(it.summary ?? '').trim()
+  if (summary) return summary
+  const kind = String(it.kind ?? '').trim()
+  const description = String(it.description ?? '').trim()
+  const combined = [kind, description].filter(Boolean).join(' · ')
+  return combined || '-'
+}
+
+function findImageItemByKey(
+  items: ImageReviewItem[] | undefined,
+  objectKey: string,
+): ImageReviewItem | undefined {
+  if (!objectKey || !items?.length) return undefined
+  return items.find((it) => it.image_object_key === objectKey)
+}
+
+/** 图审核步骤附图明细（全量），行展开可见审核/识图提示词；问题列表由通用渲染承担 */
+function ImageReviewDetail({ step }: { step: ReportStep }) {
   const items: ImageReviewItem[] = step.image_items ?? []
-  const passed = items.filter((it) => it.passed)
-  const promptOf = (key: string) =>
-    debugPrompts.find((p) => p.image_object_key === key)?.prompt_text
 
   return (
     <>
-      <Typography.Title level={5}>通过列表</Typography.Title>
-      {passed.length === 0 ? (
+      <Typography.Title level={5}>附图明细</Typography.Title>
+      {items.length === 0 ? (
         <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          本步骤无通过的附图
+          本步骤无附图记录
         </Typography.Text>
       ) : (
         <Table<ImageReviewItem>
           size="small"
           style={{ marginBottom: 16 }}
-          rowKey={(r) => r.image_object_key}
+          rowKey={(r, idx) => `${r.image_object_key}-${r.review_category ?? ''}-${idx}`}
           pagination={false}
-          dataSource={passed}
+          dataSource={items}
           expandable={{
             expandedRowRender: (r) => {
-              const p = promptOf(r.image_object_key)
-              return p ? (
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: 'pre-wrap',
-                    fontSize: 12,
-                    background: 'var(--ant-color-fill-quaternary)',
-                    padding: 8,
-                    borderRadius: 6,
-                  }}
-                >
-                  {p}
-                </pre>
-              ) : (
-                <Typography.Text type="secondary">
-                  该任务未采集完整提示词（调试开关未开启、任务在开启前执行或命中缓存）
-                </Typography.Text>
+              const reviewPrompt = String(r.review_prompt_text ?? '').trim()
+              const describePrompt = String(r.describe_prompt_text ?? '').trim()
+              return (
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  {reviewPrompt ? (
+                    <pre style={PROMPT_PRE_STYLE}>{reviewPrompt}</pre>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      该任务为旧版图审核结果，未落盘审核提示词
+                    </Typography.Text>
+                  )}
+                  {describePrompt ? (
+                    <div>
+                      <Typography.Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+                        识图提示词
+                      </Typography.Text>
+                      <pre style={PROMPT_PRE_STYLE}>{describePrompt}</pre>
+                    </div>
+                  ) : null}
+                </Space>
               )
             },
           }}
@@ -148,6 +167,14 @@ function ImageReviewDetail({
               width: 110,
               render: (_, r: ImageReviewItem) => (
                 <Tag color="blue">{reviewCategoryOf(r)}</Tag>
+              ),
+            },
+            {
+              title: '结果',
+              dataIndex: 'passed',
+              width: 80,
+              render: (passed: boolean) => (
+                <Tag color={passed ? 'success' : 'error'}>{passed ? '通过' : '不通过'}</Tag>
               ),
             },
             {
@@ -174,7 +201,7 @@ function ImageReviewDetail({
             {
               title: '识别出的图内容',
               dataIndex: 'summary',
-              render: (v: string) => v || '-',
+              render: (_, r: ImageReviewItem) => imageRecognitionText(r),
             },
           ]}
         />
@@ -644,7 +671,7 @@ export default function ManualReviewPage() {
                 <Typography.Text type="secondary">{activeStep.summary}</Typography.Text>
               </Space>
               {activeStep.step_id === 'image_review' ? (
-                <ImageReviewDetail step={activeStep} debugPrompts={activeDebugPrompts} />
+                <ImageReviewDetail step={activeStep} />
               ) : reviewSettings?.prompt_debug_enabled ? (
                 <>
                   <Typography.Title level={5}>拼接提示词（调试）</Typography.Title>
@@ -966,12 +993,21 @@ export default function ManualReviewPage() {
                               render: (_: unknown, it: ReportIssue) => {
                                 const key = String(it.related?.image_object_key || '')
                                 const caption = String(it.related?.image_caption || '')
+                                const matched = findImageItemByKey(activeStep.image_items, key)
+                                const recognition = matched
+                                  ? imageRecognitionText(matched)
+                                  : ''
                                 return key ? (
                                   <Space direction="vertical" size={4}>
                                     <IssueImageThumb objectKey={key} />
                                     {caption ? (
                                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                                         {caption}
+                                      </Typography.Text>
+                                    ) : null}
+                                    {recognition && recognition !== '-' ? (
+                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                        {recognition}
                                       </Typography.Text>
                                     ) : null}
                                   </Space>

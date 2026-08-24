@@ -222,6 +222,10 @@ export interface ImageReviewItem {
   image_caption?: string
   passed: boolean
   summary: string
+  kind?: string
+  description?: string
+  review_prompt_text?: string
+  describe_prompt_text?: string
   issues?: { severity: string; message: string; evidence?: string }[]
 }
 
