@@ -59,9 +59,7 @@ from app.services.review_cache import (
 from app.services.review_settings import (
     get_compilation_basis_concurrency,
     get_content_concurrency,
-    get_content_text_cap_chars,
     get_context_consistency_concurrency,
-    get_llm_max_output_tokens,
     get_review_prompt_debug_enabled,
     get_review_timeout_seconds,
 )
@@ -628,8 +626,6 @@ def _content_node_worker(
         int,
         str,
         str,
-        int,
-        int,
     ],
 ) -> tuple[int, ReportStep, TokenUsage, list[LogLine], dict[str, Any] | None]:
     """单节点：缓存查询 + 知识库检索 + LLM 逐项判定；不写入主库，日志行返回给主线程按序写入。"""
@@ -646,8 +642,6 @@ def _content_node_worker(
         len_content_nodes,
         global_rules,
         template_updated_at,
-        llm_max_tokens,
-        content_text_cap,
     ) = payload
     logs: list[LogLine] = []
     node_t0 = perf_counter()
@@ -711,7 +705,6 @@ def _content_node_worker(
                 ref_text=ref_text,
                 dataset_id=str(ds or ""),
                 query=query,
-                db=ldb,
             )
             cached_step = cache_lookup(ldb, fingerprint)
             if cached_step is not None:
@@ -757,12 +750,12 @@ def _content_node_worker(
                         f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
                     )
                 )
-        if len(current_text) > content_text_cap:
+        if len(current_text) > CONTENT_TEXT_CAP:
             logs.append(
                 (
                     "warning",
                     f"content 节点正文超长截断 id={tid} 原文 {len(current_text)} 字符，"
-                    f"截断至 {content_text_cap} 字符（截断点之后的内容不参与判定）",
+                    f"截断至 {CONTENT_TEXT_CAP} 字符（截断点之后的内容不参与判定）",
                 )
             )
         if len(ref_text) > CONTENT_REF_TEXT_CAP:
@@ -786,7 +779,6 @@ def _content_node_worker(
             kb_text,
             build_checklist_block(items, notes),
             global_rules,
-            text_cap=content_text_cap,
         )
         llm_t0 = perf_counter()
         try:
@@ -798,7 +790,7 @@ def _content_node_worker(
                 collect_debug=prompt_debug_enabled,
                 timeout_seconds=float(review_timeout_seconds),
                 timeout_fail_fast=True,
-                max_tokens=llm_max_tokens,
+                max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                 system=CONTENT_JSON_SYSTEM,
                 normalize_fn=lambda data, a_base: _normalize_content_checks(
                     step_id, data, a_base, items
@@ -1130,8 +1122,6 @@ def _content_prompt(
     kb_text: str,
     checklist_block: str,
     global_rules: str = "",
-    *,
-    text_cap: int = CONTENT_TEXT_CAP,
 ) -> str:
     """构造 per-node 内容审核 LLM prompt（逐项清单判定版）。
 
@@ -1139,10 +1129,9 @@ def _content_prompt(
     【检查项清单】+【判定附注】文本块（见 services/checklist.py），
     替代原先整段散文式【审核提示词】。
     `global_rules`（模板级「内容审核全局规则」）作为补充追加其后。
-    `text_cap` 为「当前章节正文」截断长度（运行时配置，默认 16000）。
     """
-    cur = current_text[:text_cap]
-    if len(current_text) > text_cap:
+    cur = current_text[:CONTENT_TEXT_CAP]
+    if len(current_text) > CONTENT_TEXT_CAP:
         cur += "\n（注意：本节正文超长，已截断，仅以上述内容为准）"
     ref = ref_text[:CONTENT_REF_TEXT_CAP]
     if len(ref_text) > CONTENT_REF_TEXT_CAP:
@@ -1442,7 +1431,6 @@ def run_review_pipeline(task_id: int) -> None:
 
         provider = effective_default_provider(db)
         prompt_debug_enabled = get_review_prompt_debug_enabled(db)
-        llm_max_tokens = get_llm_max_output_tokens(db)
         compilation_basis_concurrency = get_compilation_basis_concurrency(db)
         context_consistency_concurrency = get_context_consistency_concurrency(db)
         content_concurrency = get_content_concurrency(db)
@@ -1527,7 +1515,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
-                            max_tokens=llm_max_tokens,
+                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                         )
                     finally:
                         ldb.close()
@@ -1612,7 +1600,6 @@ def run_review_pipeline(task_id: int) -> None:
                                 model=model,
                                 prompt=pr,
                                 template_updated_at=ctx_updated_at,
-                                db=ldb,
                             )
                             cached_step = cache_lookup(ldb, fingerprint)
                             if cached_step is not None:
@@ -1637,7 +1624,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
-                            max_tokens=llm_max_tokens,
+                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                         )
                         log_lines = ctx_logs + log_lines
                         if fingerprint:
@@ -1703,13 +1690,11 @@ def run_review_pipeline(task_id: int) -> None:
                         continue
                     content_nodes.append(tn)
 
-                content_text_cap = get_content_text_cap_chars(db)
                 _append_log(
                     db,
                     task,
                     "info",
-                    f"内容审核节点数: {len(content_nodes)}，超时阈值: {review_timeout_seconds} 秒，"
-                    f"输出上限: {llm_max_tokens} tokens，正文截断: {content_text_cap} 字符",
+                    f"内容审核节点数: {len(content_nodes)}，超时阈值: {review_timeout_seconds} 秒",
                 )
                 db.commit()
 
@@ -1729,8 +1714,6 @@ def run_review_pipeline(task_id: int) -> None:
                             len(content_nodes),
                             content_global_rules,
                             str(tmpl.updated_at.isoformat() if tmpl.updated_at else ""),
-                            llm_max_tokens,
-                            content_text_cap,
                         ),
                     )
                     for i, tn in enumerate(content_nodes)
@@ -1835,7 +1818,7 @@ def run_review_pipeline(task_id: int) -> None:
                         timeout_seconds=fd_timeout,
                         timeout_fail_fast=False,
                         system=FULL_DOCUMENT_JSON_SYSTEM,
-                        max_tokens=llm_max_tokens,
+                        max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
                     )
                     for level, msg in log_lines:
                         _append_log(db, task, level, msg)
