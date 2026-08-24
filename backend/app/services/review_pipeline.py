@@ -59,7 +59,9 @@ from app.services.review_cache import (
 from app.services.review_settings import (
     get_compilation_basis_concurrency,
     get_content_concurrency,
+    get_content_text_cap_chars,
     get_context_consistency_concurrency,
+    get_llm_max_output_tokens,
     get_review_prompt_debug_enabled,
     get_review_timeout_seconds,
 )
@@ -83,17 +85,9 @@ FULL_DOCUMENT_TEXT_CAP = 80_000
 FULL_DOCUMENT_KB_CAP = 12_000
 FULL_DOCUMENT_HEADING_CATALOG_MAX = 300
 
-# 内容审核 per-node 输入截断上限（超长正文截断并在 prompt 中注明）
-CONTENT_TEXT_CAP = 16_000
+# 内容审核引用章节 / 知识库片段截断上限（当前章节正文截断见运行时设置 content_text_cap_chars）
 CONTENT_REF_TEXT_CAP = 12_000
 CONTENT_KB_TEXT_CAP = 12_000
-
-# 单次审核 LLM 调用的输出上限。覆盖 content / basis / context /
-# full_document 四类节点。节点命中多个问题时，模型需要为每个问题生成
-# message + evidence + suggestions，中文 evidence/suggestions 加上
-# JSON 转义后容易把字符串撑到 8K 以上、被截断后触发 JSON 解析失败。
-# 16K 留足余量，避免半截 JSON。
-LLM_JSON_REVIEW_MAX_TOKENS = 16384
 
 JSON_SYSTEM = """你是工程文档审核助手。你必须只输出一个 JSON 对象，不要用 markdown 代码块包裹。
 格式严格如下：
@@ -657,6 +651,8 @@ def _content_node_worker(
 
     ldb = SessionLocal()
     try:
+        content_text_cap = get_content_text_cap_chars(ldb)
+        llm_max_output_tokens = get_llm_max_output_tokens(ldb)
         un = resolve_user_node(mapping, tid)
         if un is None:
             logs.append(("warning", f"content 节点跳过（未匹配用户节点）id={tid}"))
@@ -705,6 +701,7 @@ def _content_node_worker(
                 ref_text=ref_text,
                 dataset_id=str(ds or ""),
                 query=query,
+                db=ldb,
             )
             cached_step = cache_lookup(ldb, fingerprint)
             if cached_step is not None:
@@ -750,12 +747,12 @@ def _content_node_worker(
                         f"content 节点知识库检索完成 id={tid} 用时={kb_elapsed_ms}ms",
                     )
                 )
-        if len(current_text) > CONTENT_TEXT_CAP:
+        if len(current_text) > content_text_cap:
             logs.append(
                 (
                     "warning",
                     f"content 节点正文超长截断 id={tid} 原文 {len(current_text)} 字符，"
-                    f"截断至 {CONTENT_TEXT_CAP} 字符（截断点之后的内容不参与判定）",
+                    f"截断至 {content_text_cap} 字符（截断点之后的内容不参与判定）",
                 )
             )
         if len(ref_text) > CONTENT_REF_TEXT_CAP:
@@ -779,6 +776,7 @@ def _content_node_worker(
             kb_text,
             build_checklist_block(items, notes),
             global_rules,
+            content_text_cap=content_text_cap,
         )
         llm_t0 = perf_counter()
         try:
@@ -790,7 +788,7 @@ def _content_node_worker(
                 collect_debug=prompt_debug_enabled,
                 timeout_seconds=float(review_timeout_seconds),
                 timeout_fail_fast=True,
-                max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
+                max_tokens=llm_max_output_tokens,
                 system=CONTENT_JSON_SYSTEM,
                 normalize_fn=lambda data, a_base: _normalize_content_checks(
                     step_id, data, a_base, items
@@ -1122,6 +1120,8 @@ def _content_prompt(
     kb_text: str,
     checklist_block: str,
     global_rules: str = "",
+    *,
+    content_text_cap: int,
 ) -> str:
     """构造 per-node 内容审核 LLM prompt（逐项清单判定版）。
 
@@ -1130,8 +1130,8 @@ def _content_prompt(
     替代原先整段散文式【审核提示词】。
     `global_rules`（模板级「内容审核全局规则」）作为补充追加其后。
     """
-    cur = current_text[:CONTENT_TEXT_CAP]
-    if len(current_text) > CONTENT_TEXT_CAP:
+    cur = current_text[:content_text_cap]
+    if len(current_text) > content_text_cap:
         cur += "\n（注意：本节正文超长，已截断，仅以上述内容为准）"
     ref = ref_text[:CONTENT_REF_TEXT_CAP]
     if len(ref_text) > CONTENT_REF_TEXT_CAP:
@@ -1515,7 +1515,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
-                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
+                            max_tokens=get_llm_max_output_tokens(ldb),
                         )
                     finally:
                         ldb.close()
@@ -1600,6 +1600,7 @@ def run_review_pipeline(task_id: int) -> None:
                                 model=model,
                                 prompt=pr,
                                 template_updated_at=ctx_updated_at,
+                                db=ldb,
                             )
                             cached_step = cache_lookup(ldb, fingerprint)
                             if cached_step is not None:
@@ -1624,7 +1625,7 @@ def run_review_pipeline(task_id: int) -> None:
                             collect_debug=prompt_debug_enabled,
                             timeout_seconds=120.0,
                             timeout_fail_fast=False,
-                            max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
+                            max_tokens=get_llm_max_output_tokens(ldb),
                         )
                         log_lines = ctx_logs + log_lines
                         if fingerprint:
@@ -1818,7 +1819,7 @@ def run_review_pipeline(task_id: int) -> None:
                         timeout_seconds=fd_timeout,
                         timeout_fail_fast=False,
                         system=FULL_DOCUMENT_JSON_SYSTEM,
-                        max_tokens=LLM_JSON_REVIEW_MAX_TOKENS,
+                        max_tokens=get_llm_max_output_tokens(db),
                     )
                     for level, msg in log_lines:
                         _append_log(db, task, level, msg)

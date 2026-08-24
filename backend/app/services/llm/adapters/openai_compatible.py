@@ -46,6 +46,7 @@ def chat_openai_compatible(
     max_tokens: int = 32,
     timeout: float = 60.0,
     include_usage: bool = False,
+    disable_reasoning: bool = False,
 ) -> str | tuple[str, dict[str, int | None]]:
     root = base_url.rstrip("/")
     url = f"{root}/chat/completions"
@@ -63,6 +64,12 @@ def chat_openai_compatible(
         "temperature": 0,
         "response_format": {"type": "json_object"},
     }
+    # 推理模型（如 deepseek-v4-flash）默认先产 reasoning_content 再产 content，
+    # 两者共享 max_tokens 预算；推理链超长时 content 为空（finish_reason=length），
+    # 导致「LLM 返回内容为空」静默降级失败。禁用 thinking 后 max_tokens 全给输出。
+    # 仅 DeepSeek 分支传 True（该网关支持 thinking 字段）；其他网关不传避免 400。
+    if disable_reasoning:
+        payload["thinking"] = {"type": "disabled"}
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",

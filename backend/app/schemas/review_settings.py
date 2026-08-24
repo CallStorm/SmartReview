@@ -1,8 +1,12 @@
 from pydantic import BaseModel, Field
 
 from app.services.review_settings import (
+    MAX_CONTENT_TEXT_CAP_CHARS,
+    MAX_LLM_MAX_OUTPUT_TOKENS,
     MAX_PARALLELISM,
     MAX_REVIEW_TIMEOUT_SECONDS,
+    MIN_CONTENT_TEXT_CAP_CHARS,
+    MIN_LLM_MAX_OUTPUT_TOKENS,
     MIN_PARALLELISM,
     MIN_REVIEW_TIMEOUT_SECONDS,
 )
@@ -15,6 +19,17 @@ class ReviewSettingsPublic(BaseModel):
         le=MAX_REVIEW_TIMEOUT_SECONDS,
     )
     prompt_debug_enabled: bool = False
+    disable_reasoning: bool = True
+    llm_max_output_tokens: int = Field(
+        ...,
+        ge=MIN_LLM_MAX_OUTPUT_TOKENS,
+        le=MAX_LLM_MAX_OUTPUT_TOKENS,
+    )
+    content_text_cap_chars: int = Field(
+        ...,
+        ge=MIN_CONTENT_TEXT_CAP_CHARS,
+        le=MAX_CONTENT_TEXT_CAP_CHARS,
+    )
     worker_parallel_tasks: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
     compilation_basis_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
     context_consistency_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
@@ -41,6 +56,17 @@ class ReviewSettingsUpdate(BaseModel):
         le=MAX_REVIEW_TIMEOUT_SECONDS,
     )
     prompt_debug_enabled: bool = False
+    disable_reasoning: bool = True
+    llm_max_output_tokens: int = Field(
+        ...,
+        ge=MIN_LLM_MAX_OUTPUT_TOKENS,
+        le=MAX_LLM_MAX_OUTPUT_TOKENS,
+    )
+    content_text_cap_chars: int = Field(
+        ...,
+        ge=MIN_CONTENT_TEXT_CAP_CHARS,
+        le=MAX_CONTENT_TEXT_CAP_CHARS,
+    )
     worker_parallel_tasks: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
     compilation_basis_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)
     context_consistency_concurrency: int = Field(..., ge=MIN_PARALLELISM, le=MAX_PARALLELISM)

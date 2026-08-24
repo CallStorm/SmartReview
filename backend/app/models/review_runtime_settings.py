@@ -16,6 +16,13 @@ class ReviewRuntimeSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     review_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
     prompt_debug_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # LLM 推理开关：为 True 时 DeepSeek 请求禁用 thinking（max_tokens 全用于输出，
+    # 避免推理耗尽预算返回空 content 导致审核节点静默降级失败）
+    disable_reasoning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 各审核步骤 LLM 单次输出上限（max_tokens）
+    llm_max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=32768)
+    # 内容审核「当前章节正文」截断长度（字符）
+    content_text_cap_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=16000)
     worker_parallel_tasks: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     compilation_basis_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     context_consistency_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)

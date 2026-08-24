@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from app.services.review_cache import node_fingerprint
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base
+from app.schemas.review_report import ReportIssue, ReportStep
+from app.services.review_cache import (
+    cache_lookup,
+    cache_store,
+    is_llm_parse_failure_step,
+    node_fingerprint,
+)
 
 BASE = dict(
     step_id="content",
@@ -15,6 +26,19 @@ BASE = dict(
     dataset_id="ds-1",
     query="钢管 扣件",
 )
+
+
+@pytest.fixture()
+def db_session():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    s = Session()
+    try:
+        yield s
+    finally:
+        s.close()
+        engine.dispose()
 
 
 def test_same_inputs_same_fingerprint():
@@ -42,3 +66,40 @@ def test_fingerprint_is_sha256_hex():
     fp = node_fingerprint(**BASE)
     assert len(fp) == 64
     int(fp, 16)  # 合法十六进制
+
+
+def test_is_llm_parse_failure_step_detects_placeholder():
+    step = ReportStep(
+        step_id="content",
+        passed=False,
+        summary="模型调用或 JSON 解析失败（ValueError）",
+        issues=[
+            ReportIssue(
+                severity="error",
+                message="模型输出未能解析为结构化结果，请稍后重试或联系管理员。",
+            )
+        ],
+    )
+    assert is_llm_parse_failure_step(step) is True
+
+
+def test_cache_store_skips_parse_failure(db_session):
+    step = ReportStep(
+        step_id="content",
+        passed=False,
+        summary="模型调用或 JSON 解析失败（ValueError）",
+        issues=[
+            ReportIssue(
+                severity="error",
+                message="模型输出未能解析为结构化结果，请稍后重试或联系管理员。",
+            )
+        ],
+    )
+    cache_store(
+        db_session,
+        fingerprint="deadbeef" * 8,
+        step_id="content",
+        template_node_id="n4",
+        step=step,
+    )
+    assert cache_lookup(db_session, "deadbeef" * 8) is None

@@ -22,7 +22,10 @@ from app.services.review_settings import (
     get_or_create_review_settings,
     get_compilation_basis_concurrency,
     get_content_concurrency,
+    get_content_text_cap_chars,
     get_context_consistency_concurrency,
+    get_disable_reasoning,
+    get_llm_max_output_tokens,
     get_system_name,
     get_worker_parallel_tasks,
 )
@@ -54,6 +57,9 @@ def _review_settings_public(request: Request, db: Session, row) -> ReviewSetting
     return ReviewSettingsPublic(
         review_timeout_seconds=int(row.review_timeout_seconds),
         prompt_debug_enabled=bool(row.prompt_debug_enabled),
+        disable_reasoning=get_disable_reasoning(db),
+        llm_max_output_tokens=get_llm_max_output_tokens(db),
+        content_text_cap_chars=get_content_text_cap_chars(db),
         worker_parallel_tasks=get_worker_parallel_tasks(db),
         compilation_basis_concurrency=get_compilation_basis_concurrency(db),
         context_consistency_concurrency=get_context_consistency_concurrency(db),
@@ -147,6 +153,9 @@ async def update_review_settings(
     request: Request,
     review_timeout_seconds: int = Form(...),
     prompt_debug_enabled: bool = Form(False),
+    disable_reasoning: bool = Form(True),
+    llm_max_output_tokens: int = Form(...),
+    content_text_cap_chars: int = Form(...),
     worker_parallel_tasks: int = Form(...),
     compilation_basis_concurrency: int = Form(...),
     context_consistency_concurrency: int = Form(...),
@@ -160,6 +169,9 @@ async def update_review_settings(
     body = ReviewSettingsUpdate(
         review_timeout_seconds=review_timeout_seconds,
         prompt_debug_enabled=prompt_debug_enabled,
+        disable_reasoning=disable_reasoning,
+        llm_max_output_tokens=llm_max_output_tokens,
+        content_text_cap_chars=content_text_cap_chars,
         worker_parallel_tasks=worker_parallel_tasks,
         compilation_basis_concurrency=compilation_basis_concurrency,
         context_consistency_concurrency=context_consistency_concurrency,
@@ -169,6 +181,9 @@ async def update_review_settings(
     row = get_or_create_review_settings(db)
     row.review_timeout_seconds = int(body.review_timeout_seconds)
     row.prompt_debug_enabled = bool(body.prompt_debug_enabled)
+    row.disable_reasoning = bool(body.disable_reasoning)
+    row.llm_max_output_tokens = int(body.llm_max_output_tokens)
+    row.content_text_cap_chars = int(body.content_text_cap_chars)
     row.worker_parallel_tasks = int(body.worker_parallel_tasks)
     row.compilation_basis_concurrency = int(body.compilation_basis_concurrency)
     row.context_consistency_concurrency = int(body.context_consistency_concurrency)

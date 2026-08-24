@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { App as AntApp, Alert, Button, Modal, Space, Spin, Typography } from 'antd'
+import { useEffect } from 'react'
 import { api } from '../api/client'
 
 interface Props {
@@ -52,6 +53,14 @@ export default function PromptOptimizeModal({
       message.error(typeof detail === 'string' ? detail : '优化请求失败')
     },
   })
+
+  // Modal 组件常驻挂载；destroyOnClose 只清内容，不清 mutation。
+  // 每次打开或切换优化目标时重置，避免沿用上一节点的结果、隐藏「开始优化」。
+  useEffect(() => {
+    if (!open) return
+    mut.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在打开/目标变更时重置
+  }, [open, kind, nodeTitle, currentText])
 
   return (
     <Modal
@@ -138,13 +147,13 @@ export default function PromptOptimizeModal({
           )}
         </div>
       )}
-      {mut.isIdle && (
+      {(mut.isIdle || mut.isError) && !mut.isPending && (
         <Space direction="vertical" style={{ width: '100%' }}>
           <Typography.Text type="secondary">
             将按「一句一行一条检查项 / 逐字段比对」原则改写当前提示词，文字取自原文、不新增审核要求。
           </Typography.Text>
           <Button type="primary" onClick={() => mut.mutate()}>
-            开始优化
+            {mut.isError ? '重新优化' : '开始优化'}
           </Button>
         </Space>
       )}

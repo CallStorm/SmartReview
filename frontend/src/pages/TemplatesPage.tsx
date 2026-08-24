@@ -959,6 +959,7 @@ export default function TemplatesPage() {
       />
 
       <PromptOptimizeModal
+        key={optimizeCtx ? `${selectedNodeId ?? ''}:${optimizeCtx.kind}` : 'closed'}
         open={!!optimizeCtx}
         schemeTypeId={preview?.scheme_type_id ?? 0}
         kind={optimizeCtx?.kind ?? 'review_prompt'}

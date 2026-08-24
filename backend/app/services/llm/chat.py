@@ -17,6 +17,7 @@ from app.services.llm.resolve import (
     effective_minimax,
     effective_volcengine,
 )
+from app.services.review_settings import get_disable_reasoning
 
 
 class TokenUsage(TypedDict):
@@ -172,6 +173,7 @@ def complete_chat_with_usage(
             max_tokens=max_tokens,
             timeout=timeout,
             include_usage=True,
+            disable_reasoning=(provider == "deepseek" and get_disable_reasoning(db)),
         )
         return {"text": text, "usage": usage}
     url, key, model = effective_minimax(db)

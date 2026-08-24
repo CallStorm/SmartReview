@@ -70,6 +70,9 @@ type UploadForm = {
 type ReviewForm = {
   review_timeout_seconds: number
   prompt_debug_enabled: boolean
+  disable_reasoning: boolean
+  llm_max_output_tokens: number
+  content_text_cap_chars: number
   worker_parallel_tasks: number
   compilation_basis_concurrency: number
   context_consistency_concurrency: number
@@ -214,6 +217,9 @@ export default function SettingsPage() {
       reviewForm.setFieldsValue({
         review_timeout_seconds: reviewData.review_timeout_seconds,
         prompt_debug_enabled: reviewData.prompt_debug_enabled,
+        disable_reasoning: reviewData.disable_reasoning,
+        llm_max_output_tokens: reviewData.llm_max_output_tokens,
+        content_text_cap_chars: reviewData.content_text_cap_chars,
         worker_parallel_tasks: reviewData.worker_parallel_tasks,
         compilation_basis_concurrency: reviewData.compilation_basis_concurrency,
         context_consistency_concurrency: reviewData.context_consistency_concurrency,
@@ -342,6 +348,9 @@ export default function SettingsPage() {
       const formData = new FormData()
       formData.append('review_timeout_seconds', String(values.review_timeout_seconds))
       formData.append('prompt_debug_enabled', String(Boolean(values.prompt_debug_enabled)))
+      formData.append('disable_reasoning', String(Boolean(values.disable_reasoning)))
+      formData.append('llm_max_output_tokens', String(values.llm_max_output_tokens))
+      formData.append('content_text_cap_chars', String(values.content_text_cap_chars))
       formData.append('worker_parallel_tasks', String(values.worker_parallel_tasks))
       formData.append(
         'compilation_basis_concurrency',
@@ -659,6 +668,56 @@ export default function SettingsPage() {
           >
             <InputNumber min={30} max={600} precision={0} style={{ width: '100%', maxWidth: 280 }} />
           </Form.Item>
+        </Card>
+
+        <Card
+          type="inner"
+          size="small"
+          title={<Typography.Text strong>模型调用</Typography.Text>}
+          style={{ marginTop: 16 }}
+          styles={{ body: { paddingBottom: 8 } }}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginTop: 0, marginBottom: 0 }}>
+            控制审核各阶段的大模型请求参数。推理开关与输出上限主要影响 DeepSeek（推理模型）。
+          </Typography.Paragraph>
+
+          <Divider plain style={{ margin: '16px 0 12px' }}>
+            <Typography.Text type="secondary">LLM 推理</Typography.Text>
+          </Divider>
+          <Form.Item
+            label="关闭 LLM 推理"
+            name="disable_reasoning"
+            valuePropName="checked"
+            extra="开启（默认）后 DeepSeek 请求禁用 thinking，输出预算（max_tokens）全用于结果文本，审核更快且避免「推理耗尽预算返回空结果」导致的审核失败；关闭则恢复模型原生推理。"
+          >
+            <Switch checkedChildren="关" unCheckedChildren="开" />
+          </Form.Item>
+
+          <Divider plain style={{ margin: '20px 0 12px' }}>
+            <Typography.Text type="secondary">上下文大小</Typography.Text>
+          </Divider>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="LLM 输出上限（tokens）"
+                name="llm_max_output_tokens"
+                rules={[{ required: true, message: '请填写输出上限' }]}
+                extra="各审核步骤单次模型输出的 max_tokens，建议 4096～65536，默认 32768。"
+              >
+                <InputNumber min={4096} max={65536} step={1024} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="内容审核正文截断（字符）"
+                name="content_text_cap_chars"
+                rules={[{ required: true, message: '请填写截断长度' }]}
+                extra="内容审核「当前章节正文」送审前的截断长度，建议 4000～80000，默认 16000。"
+              >
+                <InputNumber min={4000} max={80000} step={1000} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
         </Card>
 
         <Card
