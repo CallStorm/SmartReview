@@ -35,8 +35,21 @@ from app.services.llm.resolve import ImageReviewConfig
 from app.services.review_cache import cache_lookup, cache_store, provider_model_pair
 
 IMAGE_REVIEW_VERSION = "img-3"
-DESCRIBE_PROMPT_VERSION = "desc-1"
-JUDGE_PROMPT_VERSION = "judge-1"
+DESCRIBE_PROMPT_VERSION = "desc-2"
+JUDGE_PROMPT_VERSION = "judge-2"
+DESCRIBE_TOOL_NAME = "submit_image_description"
+DESCRIBE_TOOL_SCHEMA: dict[str, Any] = {
+    "name": DESCRIBE_TOOL_NAME,
+    "description": "Submit structured image description (kind and visible content only)",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string"},
+            "description": {"type": "string"},
+        },
+        "required": ["kind", "description"],
+    },
+}
 IMAGE_STEP_ID = "image_review"
 DESCRIBE_STEP_ID = "image_describe"
 
@@ -176,6 +189,11 @@ def build_judge_user_prompt(
         if cap:
             part += f"；图说明={cap}"
         lines.append(part)
+    lines.append("")
+    lines.append(
+        "输出 JSON：passed(boolean), summary(string), issues([{severity,message,evidence}]), "
+        "matched_image_indexes(number[]，1-based，满足要求的附图序号；无一满足则 [])"
+    )
     return "\n".join(lines)
 
 
@@ -265,11 +283,16 @@ def _vision_describe_image(*, cfg: ImageReviewConfig, image_bytes: bytes) -> dic
         max_tokens=1024,
         timeout=120.0,
         images=[(media_type, b64)],
+        tools=[DESCRIBE_TOOL_SCHEMA],
     )
     parsed = extract_json_object(text)
+    kind = str(parsed.get("kind") or "").strip()
+    description = str(parsed.get("description") or "").strip()
+    if not kind and not description:
+        raise ValueError("识图结果缺少 kind/description")
     return {
-        "kind": str(parsed.get("kind") or "").strip(),
-        "description": str(parsed.get("description") or "").strip(),
+        "kind": kind,
+        "description": description,
     }
 
 

@@ -200,9 +200,14 @@ def chat_anthropic_messages(
     timeout: float = 60.0,
     include_usage: bool = False,
     images: list[tuple[str, str]] | None = None,
+    tools: list[dict] | None = None,
 ) -> str | tuple[str, dict[str, int | None]]:
     """images: [(media_type, base64_data), ...]，Anthropic image block 形式
-    置于文本块之前（MiniMax 视觉模型兼容）。"""
+    置于文本块之前（MiniMax 视觉模型兼容）。
+
+    tools: 若为 None，沿用审核默认 REVIEW_TOOL_SCHEMA（submit_review_result）。
+    传入时使用该列表，tool_choice / tool_use 抽取均针对 tools[0]["name"]。
+    """
     url = _messages_url(base_url)
     content_blocks: list[dict[str, Any]] = []
     for media_type, b64_data in images or []:
@@ -230,8 +235,10 @@ def chat_anthropic_messages(
     payload["temperature"] = 0
     # 结构化任务：强制 tool_use，模型必须通过指定 schema 提交 JSON。
     # 若 provider / MiniMax 网关不支持，会在响应里走 text 降级路径（见下方）。
-    payload["tools"] = [REVIEW_TOOL_SCHEMA]
-    payload["tool_choice"] = {"type": "tool", "name": REVIEW_TOOL_NAME}
+    used_tools = tools if tools is not None else [REVIEW_TOOL_SCHEMA]
+    tool_name = str(used_tools[0].get("name") or REVIEW_TOOL_NAME)
+    payload["tools"] = used_tools
+    payload["tool_choice"] = {"type": "tool", "name": tool_name}
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
@@ -260,7 +267,7 @@ def chat_anthropic_messages(
 
     raw_content = _content_list_from_response(data)
     # 优先：tool_use.input 是结构化 JSON，序列化后给上游 extract_json_object 解析。
-    tool_input = _find_tool_use_input(raw_content, REVIEW_TOOL_NAME)
+    tool_input = _find_tool_use_input(raw_content, tool_name)
     if tool_input is not None:
         text = json.dumps(tool_input, ensure_ascii=False)
         if include_usage:

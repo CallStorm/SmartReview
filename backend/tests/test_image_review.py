@@ -14,6 +14,7 @@ from app.database import Base
 from app.services.image_review import (
     IMAGE_REVIEW_VERSION,
     NodeImageConfig,
+    _vision_describe_image,
     build_describe_user_prompt,
     build_judge_user_prompt,
     collect_node_images,
@@ -306,6 +307,7 @@ def test_build_judge_user_prompt_includes_all_descriptions_and_kind_only():
     assert "绿色路径" in p
     assert "不要额外提高标准" in p
     assert "至少一张" in p
+    assert "matched_image_indexes" in p
     # 未启用 content → 不应出现空的内容要素行强加标准
     assert "内容要素：" not in p or "内容要素：\n" not in p
 
@@ -583,3 +585,38 @@ def test_judge_passed_false_nonempty_matched_is_pass(db_session, monkeypatch):
     assert res.passed is True
     assert res.image_items[0]["passed"] is True
     assert res.image_items[1]["passed"] is False
+
+
+def _tiny_png() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_vision_describe_uses_kind_description_tool_schema(monkeypatch):
+    captured: dict = {}
+
+    def fake_chat(**kwargs):
+        captured.update(kwargs)
+        return '{"kind": "路线图", "description": "绿色路径从营销中心到医院"}'
+
+    monkeypatch.setattr("app.services.image_review.chat_anthropic_messages", fake_chat)
+    result = _vision_describe_image(cfg=_cfg(), image_bytes=_tiny_png())
+    tools = captured.get("tools") or []
+    assert tools, "describe 必须传入识图专用 tools"
+    schema = tools[0]
+    assert schema["name"] == "submit_image_description"
+    required = schema["input_schema"]["required"]
+    assert "kind" in required
+    assert "description" in required
+    assert result["kind"] == "路线图"
+    assert result["description"] == "绿色路径从营销中心到医院"
+
+
+def test_vision_describe_empty_kind_and_description_raises(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.image_review.chat_anthropic_messages",
+        lambda **kwargs: '{"kind": "", "description": ""}',
+    )
+    with pytest.raises(ValueError):
+        _vision_describe_image(cfg=_cfg(), image_bytes=_tiny_png())
