@@ -8,6 +8,7 @@ import {
   FileSearchOutlined,
   FileTextOutlined,
   FileWordOutlined,
+  MoreOutlined,
   ProfileOutlined,
   SafetyCertificateOutlined,
   UploadOutlined,
@@ -16,9 +17,9 @@ import {
 import {
   App as AntApp,
   Button,
+  Dropdown,
   Form,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
@@ -27,6 +28,7 @@ import {
   Typography,
   Upload,
 } from 'antd'
+import type { MenuProps } from 'antd'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
@@ -103,20 +105,15 @@ function formatTokenCount(value?: number | null): string {
   return String(value)
 }
 
-function tokensCell(row: ReviewTask, isAdmin: boolean) {
-  if (isAdmin) {
-    return (
-      <div className="review-page__tokens-split">
-        <span>
-          输入 <span className="review-page__tokens-num">{formatTokenCount(row.input_tokens)}</span>
-        </span>
-        <span>
-          输出 <span className="review-page__tokens-num">{formatTokenCount(row.output_tokens)}</span>
-        </span>
-      </div>
-    )
-  }
-  return formatTokenCount(row.total_tokens)
+function formatCreatedAtShort(iso: string): string {
+  // 兼容 "2026-08-25T10:15:34" / 带 Z / 空格分隔
+  const d = new Date(iso.includes('T') || iso.includes(' ') ? iso : iso)
+  if (Number.isNaN(d.getTime())) return iso || '—'
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}`
 }
 
 async function downloadWordV2(taskId: number, downloadName: string): Promise<void> {
@@ -167,7 +164,7 @@ async function downloadAuditReportDocx(
 export default function ReviewPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [schemeId, setSchemeId] = useState<number | null>(null)
@@ -451,8 +448,49 @@ export default function ReviewPage() {
           dataSource={tasks}
           locale={{ emptyText: '暂无审核任务' }}
           pagination={DEFAULT_TABLE_PAGINATION}
+          tableLayout="fixed"
+          expandable={{
+            expandedRowRender: (row) => (
+              <dl className="review-page__expand">
+                {isAdmin ? (
+                  <>
+                    <div>
+                      <dt>任务 ID</dt>
+                      <dd>{row.id}</dd>
+                    </div>
+                    <div>
+                      <dt>方案类型</dt>
+                      <dd>{`${row.scheme_category} / ${row.scheme_name}`}</dd>
+                    </div>
+                    <div>
+                      <dt>审核耗时(分钟)</dt>
+                      <dd>{formatDurationMinutes(row.duration_ms)}</dd>
+                    </div>
+                    <div>
+                      <dt>输入词元</dt>
+                      <dd>{formatTokenCount(row.input_tokens)}</dd>
+                    </div>
+                    <div>
+                      <dt>输出词元</dt>
+                      <dd>{formatTokenCount(row.output_tokens)}</dd>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <dt>审核耗时(分钟)</dt>
+                      <dd>{formatDurationMinutes(row.duration_ms)}</dd>
+                    </div>
+                    <div>
+                      <dt>消耗词元</dt>
+                      <dd>{formatTokenCount(row.total_tokens)}</dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+            ),
+          }}
           columns={[
-            { title: 'ID', dataIndex: 'id', width: 72 },
             ...(isAdmin
               ? [
                   {
@@ -466,176 +504,113 @@ export default function ReviewPage() {
                 ]
               : []),
             {
-              title: '方案类型',
-              key: 'scheme',
-              render: (_, row) => `${row.scheme_category} / ${row.scheme_name}`,
-            },
-            {
               title: '文件',
-              key: 'original_filename',
+              key: 'file',
+              width: 220,
               ellipsis: { showTitle: false },
-              render: (_, row) => (
-                <Tooltip title={row.original_filename}>
-                  <Typography.Text ellipsis className="review-page__filename">
-                    {row.original_filename}
-                  </Typography.Text>
-                </Tooltip>
-              ),
+              render: (_: unknown, row: ReviewTask) => {
+                const scheme = `${row.scheme_category} / ${row.scheme_name}`
+                const tip = `${row.original_filename}\n${scheme}\n#${row.id}`
+                return (
+                  <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tip}</span>}>
+                    <div className="review-page__file-cell">
+                      <Typography.Text ellipsis className="review-page__filename">
+                        {row.original_filename}
+                      </Typography.Text>
+                      <span className="review-page__scheme-sub">{scheme}</span>
+                    </div>
+                  </Tooltip>
+                )
+              },
             },
             {
               title: '状态',
               key: 'status',
-              width: 130,
+              width: 88,
               render: (_, row) => taskStatusCell(row),
             },
-            { title: '创建时间', dataIndex: 'created_at', width: 188 },
             {
-              title: '审核耗时(分钟)',
-              key: 'duration_ms',
-              width: 132,
-              align: 'right',
-              render: (_, row) => formatDurationMinutes(row.duration_ms),
-            },
-            {
-              title: '消耗词元',
-              key: 'total_tokens',
-              width: isAdmin ? 148 : 108,
-              align: 'right',
-              render: (_, row) => tokensCell(row, isAdmin),
+              title: '创建时间',
+              width: 96,
+              render: (_, row) => (
+                <Tooltip title={row.created_at}>{formatCreatedAtShort(row.created_at)}</Tooltip>
+              ),
             },
             {
               title: '操作',
               key: 'act',
-              width: isAdmin ? 560 : 320,
-              render: (_, row) => {
-                const taskEnded =
-                  row.status === 'succeeded' || row.status === 'failed'
+              width: isAdmin ? 280 : 240,
+              render: (_: unknown, row: ReviewTask) => {
+                const taskEnded = row.status === 'succeeded' || row.status === 'failed'
+                const moreItems: MenuProps['items'] = isAdmin
+                  ? [
+                      {
+                        key: 'log',
+                        icon: <FileTextOutlined />,
+                        label: '审核日志',
+                        onClick: () => void openReviewLog(row.id),
+                      },
+                      {
+                        key: 'self-check',
+                        icon: <SafetyCertificateOutlined />,
+                        label: 'AI测评',
+                        disabled: row.status !== 'succeeded',
+                        onClick: () => setSelfCheckTask(row),
+                      },
+                      {
+                        key: 'docx-report',
+                        icon: <FileWordOutlined />,
+                        label: 'Word 报告',
+                        disabled: !taskEnded,
+                        onClick: () => void handleAuditReportDocxExport(row),
+                      },
+                      { type: 'divider' as const },
+                      {
+                        key: 'delete',
+                        icon: <DeleteOutlined />,
+                        label: '删除',
+                        danger: true,
+                        onClick: () => {
+                          modal.confirm({
+                            title: '删除该审核任务？',
+                            content: '将移除任务记录及已上传的文档，且不可恢复。',
+                            okText: '删除',
+                            okButtonProps: { danger: true },
+                            cancelText: '取消',
+                            onOk: () => deleteMut.mutateAsync(row.id),
+                          })
+                        },
+                      },
+                    ]
+                  : []
                 return (
-                  <Space size="middle" wrap={false}>
-                    <Tooltip
-                      title={
-                        taskEnded
-                          ? undefined
-                          : '任务处理结束后（已完成或失败）可进入人工审阅'
-                      }
-                    >
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<AuditOutlined />}
-                        disabled={!taskEnded}
-                        onClick={() => navigate(`/review/${row.id}/manual`)}
-                      >
+                  <div className="review-page__actions">
+                    <Tooltip title={taskEnded ? undefined : '任务处理结束后（已完成或失败）可进入人工审阅'}>
+                      <Button type="link" size="small" icon={<AuditOutlined />} disabled={!taskEnded}
+                        onClick={() => navigate(`/review/${row.id}/manual`)}>
                         人工审阅
                       </Button>
                     </Tooltip>
-                    {isAdmin ? (
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<FileTextOutlined />}
-                        onClick={() => void openReviewLog(row.id)}
-                      >
-                        审核日志
-                      </Button>
-                    ) : null}
-                    <Tooltip
-                      title={
-                        taskEnded
-                          ? undefined
-                          : '任务处理结束后（已完成或失败）可导出审核报告'
-                      }
-                    >
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<ProfileOutlined />}
-                        disabled={!taskEnded}
-                        onClick={() => void handleAuditReportExport(row)}
-                      >
+                    <Tooltip title={taskEnded ? undefined : '任务处理结束后（已完成或失败）可导出审核报告'}>
+                      <Button type="link" size="small" icon={<ProfileOutlined />} disabled={!taskEnded}
+                        onClick={() => void handleAuditReportExport(row)}>
                         审核报告
                       </Button>
                     </Tooltip>
-                    {isAdmin ? (
-                      <Tooltip
-                        title={
-                          row.status === 'succeeded'
-                            ? 'AI 测评：体检 + 对抗复核，评估这次审核有没有漏掉/误报'
-                            : '仅成功完成的任务可测评'
-                        }
-                      >
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<SafetyCertificateOutlined />}
-                          disabled={row.status !== 'succeeded'}
-                          onClick={() => setSelfCheckTask(row)}
-                        >
-                          AI测评
-                        </Button>
-                      </Tooltip>
-                    ) : null}
-                    {isAdmin ? (
-                      <Tooltip
-                        title={
-                          taskEnded
-                            ? undefined
-                            : '任务处理结束后（已完成或失败）可导出 Word 版审核报告'
-                        }
-                      >
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<FileWordOutlined />}
-                          disabled={!taskEnded}
-                          onClick={() => void handleAuditReportDocxExport(row)}
-                        >
-                          Word 报告
-                        </Button>
-                      </Tooltip>
-                    ) : null}
-                    <Tooltip
-                      title={
-                        taskEnded
-                          ? undefined
-                          : '任务处理结束后（已完成或失败）可导出方案'
-                      }
-                    >
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<ExportOutlined />}
-                        disabled={!taskEnded}
-                        onClick={() => void handleExport(row)}
-                      >
+                    <Tooltip title={taskEnded ? undefined : '任务处理结束后（已完成或失败）可导出方案'}>
+                      <Button type="link" size="small" icon={<ExportOutlined />} disabled={!taskEnded}
+                        onClick={() => void handleExport(row)}>
                         导出方案
                       </Button>
                     </Tooltip>
-                    {isAdmin ? (
-                      <Popconfirm
-                        title="删除该审核任务？"
-                        description="将移除任务记录及已上传的文档，且不可恢复。"
-                        okText="删除"
-                        cancelText="取消"
-                        okButtonProps={{
-                          danger: true,
-                          loading:
-                            deleteMut.isPending &&
-                            deleteMut.variables === row.id,
-                        }}
-                        onConfirm={() => deleteMut.mutate(row.id)}
-                      >
-                        <Button
-                          type="link"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                        >
-                          删除
+                    {moreItems.length > 0 ? (
+                      <Dropdown menu={{ items: moreItems }} trigger={['click']}>
+                        <Button type="link" size="small" icon={<MoreOutlined />}>
+                          更多
                         </Button>
-                      </Popconfirm>
+                      </Dropdown>
                     ) : null}
-                  </Space>
+                  </div>
                 )
               },
             },

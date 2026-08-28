@@ -233,7 +233,7 @@ export const adminManualSections: ManualSection[] = [
     id: 'review-admin',
     title: '9. 方案审核（管理员视角）',
     intro:
-      '管理员在方案审核页可查看全部用户的任务（含「用户名」列），并使用普通用户不可见的「审核日志」与跨用户「删除」能力。可展开 Token 明细（输入/输出）排查资源消耗。',
+      '管理员在方案审核页可查看全部用户的任务（含「用户名」列）。主表精简为文件、状态、时间与常用操作；展开行可查看任务 ID、耗时与 Token（输入/输出）。低频操作（审核日志、报告、AI测评、删除等）收在「更多」菜单。',
     image: { src: img('review-admin.png'), caption: '图 9-1  方案审核（管理员视图）' },
   },
   {
