@@ -494,7 +494,7 @@ def test_vision_all_describe_fail_does_not_pass(db_session, monkeypatch):
     )
     assert res.passed is False
     assert calls["text"] == 0
-    assert "视觉模型调用失败" in res.summary
+    assert "视觉识图未得到有效描述" in res.summary
     assert any(i.related.get("check_item_id") == "n37-img-err" for i in res.issues)
 
 
@@ -617,6 +617,31 @@ def test_vision_describe_empty_kind_and_description_raises(monkeypatch):
     monkeypatch.setattr(
         "app.services.image_review.chat_anthropic_messages",
         lambda **kwargs: '{"kind": "", "description": ""}',
+    )
+    with pytest.raises(ValueError):
+        _vision_describe_image(cfg=_cfg(), image_bytes=_tiny_png())
+
+
+def test_vision_describe_falls_back_to_prose_when_json_missing(monkeypatch):
+    """MiniMax 等网关偶发不走 tool_use，返回散文描述时仍应可用作 description。"""
+    prose = (
+        "这是一张手机导航App的路线规划截图。\n\n"
+        "顶部显示起点与终点为府谷县中医院，主图显示绿色规划路线。"
+    )
+    monkeypatch.setattr(
+        "app.services.image_review.chat_anthropic_messages",
+        lambda **kwargs: prose,
+    )
+    result = _vision_describe_image(cfg=_cfg(), image_bytes=_tiny_png())
+    assert result["kind"] == ""
+    assert "府谷县中医院" in result["description"]
+    assert "路线规划" in result["description"]
+
+
+def test_vision_describe_blank_prose_still_raises(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.image_review.chat_anthropic_messages",
+        lambda **kwargs: "   \n  ",
     )
     with pytest.raises(ValueError):
         _vision_describe_image(cfg=_cfg(), image_bytes=_tiny_png())

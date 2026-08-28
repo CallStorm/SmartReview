@@ -1048,21 +1048,24 @@ def _normalize_context_consistency_issue(
     current_title_path: list[Any],
     ref_full_paths: list[str],
 ) -> None:
-    """将章节展示为完整标题路径（如 一、… > 1.…），并尽量把对照章节解析为模板中的完整路径。"""
+    """将章节展示为完整标题路径（如 一、… > 1.…），并尽量把对照章节解析为模板中的完整路径。
+
+    模型常漏填 chapter_b；此时用本节点配置的对照章节路径兜底，避免前端显示「—」。
+    """
     related = issue.related if isinstance(issue.related, dict) else {}
     parts = [str(x).strip() for x in current_title_path if str(x).strip()]
     cur_full = " > ".join(parts)
     if cur_full:
         related["chapter_a"] = cur_full
+
+    refs = [str(p).strip() for p in ref_full_paths if str(p).strip()]
     raw_b = str(related.get("chapter_b") or "").strip()
-    if raw_b and ref_full_paths:
-        if raw_b in ref_full_paths:
+    if raw_b and refs:
+        if raw_b in refs:
             related["chapter_b"] = raw_b
         else:
             matched: str | None = None
-            for rp in ref_full_paths:
-                if not rp:
-                    continue
+            for rp in refs:
                 if raw_b in rp:
                     matched = rp
                     break
@@ -1072,6 +1075,26 @@ def _normalize_context_consistency_issue(
                     break
             if matched:
                 related["chapter_b"] = matched
+    elif not raw_b and refs:
+        if len(refs) == 1:
+            related["chapter_b"] = refs[0]
+        else:
+            msg = str(issue.message or "")
+            picked: str | None = None
+            for rp in refs:
+                last_seg = rp.split(" > ")[-1].strip()
+                # 末级常带编号前缀「3.劳动力计划」，message 里往往只写「劳动力计划」
+                bare = re.sub(r"^\d+[\.、．]\s*", "", last_seg).strip()
+                if last_seg and last_seg in msg:
+                    picked = rp
+                    break
+                if bare and bare in msg:
+                    picked = rp
+                    break
+                if rp in msg:
+                    picked = rp
+                    break
+            related["chapter_b"] = picked if picked else "；".join(refs)
     issue.related = related
 
 

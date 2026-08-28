@@ -272,7 +272,11 @@ def _parse_describe_payload(summary: str) -> dict[str, str] | None:
 
 
 def _vision_describe_image(*, cfg: ImageReviewConfig, image_bytes: bytes) -> dict[str, Any]:
-    """视觉模型只识图，返回规范化的 kind / description。"""
+    """视觉模型只识图，返回规范化的 kind / description。
+
+    优先解析 tool_use / JSON；若网关退回散文（MiniMax 视觉常见），
+    将全文作为 description，kind 留空，交由后续文本 LLM 判定。
+    """
     media_type, b64 = compress_image_bytes(image_bytes, max_side=cfg.max_side)
     text = chat_anthropic_messages(
         base_url=cfg.base_url,
@@ -285,9 +289,18 @@ def _vision_describe_image(*, cfg: ImageReviewConfig, image_bytes: bytes) -> dic
         images=[(media_type, b64)],
         tools=[DESCRIBE_TOOL_SCHEMA],
     )
-    parsed = extract_json_object(text)
-    kind = str(parsed.get("kind") or "").strip()
-    description = str(parsed.get("description") or "").strip()
+    kind = ""
+    description = ""
+    try:
+        parsed = extract_json_object(text)
+        kind = str(parsed.get("kind") or "").strip()
+        description = str(parsed.get("description") or "").strip()
+    except ValueError:
+        prose = (text or "").strip()
+        if prose:
+            description = prose
+        else:
+            raise
     if not kind and not description:
         raise ValueError("识图结果缺少 kind/description")
     return {
@@ -476,14 +489,14 @@ def review_node_images(
 
     if vision_failed == len(reviewed) and reviewed:
         res.passed = False
-        res.summary = "存在性审核通过；视觉模型调用失败，图种/要素审核未执行"
+        res.summary = "存在性审核通过；视觉识图未得到有效描述，图种/要素审核未执行"
         res.logs.append(("error", f"图审核节点 {template_node_id} 视觉识图全部失败"))
         res.issues.append(
             ReportIssue(
                 severity="info",
                 message=(
-                    f"视觉模型调用失败（{vision_failed}/{len(reviewed)} 张），"
-                    "图种与内容要素审核未执行，请检查图审核模型配置"
+                    f"视觉识图未得到有效描述（{vision_failed}/{len(reviewed)} 张），"
+                    "图种与内容要素审核未执行；请稍后重试或查看审核日志中的识图错误详情"
                 ),
                 evidence="",
                 anchor={"template_node_id": template_node_id},

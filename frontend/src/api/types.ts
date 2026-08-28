@@ -358,6 +358,9 @@ export interface UploadSettings {
 export interface ReviewSettings {
   review_timeout_seconds: number
   prompt_debug_enabled: boolean
+  disable_reasoning: boolean
+  llm_max_output_tokens: number
+  content_text_cap_chars: number
   worker_parallel_tasks: number
   compilation_basis_concurrency: number
   context_consistency_concurrency: number
