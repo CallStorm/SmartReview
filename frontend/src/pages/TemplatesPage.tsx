@@ -59,6 +59,18 @@ function buildTemplateFileName(schemeName: string): string {
   return `${safeSchemeName}_${yyyy}${mm}${dd}.docx`
 }
 
+const CONFIG_EXCEL_BLANK = '/config-templates/专项方案审核配置模版_空白.xlsx'
+const CONFIG_EXCEL_SAMPLE = '/config-templates/专项方案审核配置模版_落地脚手架示例.xlsx'
+
+function downloadStaticFile(url: string, filename: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
 export default function TemplatesPage() {
   const qc = useQueryClient()
   const { message } = AntApp.useApp()
@@ -338,6 +350,27 @@ export default function TemplatesPage() {
     <PageShell
       icon={<FormOutlined />}
       description="按方案类型上传 Word 模版、配置标题树规则与审核工作流。"
+      extra={
+        <Space wrap>
+          <Button
+            onClick={() =>
+              downloadStaticFile(CONFIG_EXCEL_BLANK, '专项方案审核配置模版_空白.xlsx')
+            }
+          >
+            下载空白配置模版
+          </Button>
+          <Button
+            onClick={() =>
+              downloadStaticFile(
+                CONFIG_EXCEL_SAMPLE,
+                '专项方案审核配置模版_落地脚手架示例.xlsx',
+              )
+            }
+          >
+            下载落地脚手架示例
+          </Button>
+        </Space>
+      }
     >
       <Table
         rowKey="id"
@@ -468,13 +501,21 @@ export default function TemplatesPage() {
                     }
                   }}
                 >
-                  下载
+                  下载 Word
                 </Button>
               </Space>
             ),
           },
         ]}
       />
+
+      <Typography.Paragraph
+        type="secondary"
+        style={{ marginTop: 16, marginBottom: 0, maxWidth: 720 }}
+      >
+        配置用 Excel：请下载空白模版或落地脚手架示例填写后，在本页按方案类型手工录入（系统不自动导入）。
+        章节结构以 Word 模版标题为准；图审核请在「章节审查配置」对应列填写，并在审核工作流中开启。
+      </Typography.Paragraph>
 
       <Modal
         title={preview ? `模版结构 — ${preview.original_filename}` : '模版结构'}
